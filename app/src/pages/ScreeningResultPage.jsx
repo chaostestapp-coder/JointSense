@@ -1,18 +1,56 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw } from "lucide-react";
 import StatusBadge from "../components/common/StatusBadge";
+import { useAuth } from "../context/useAuth";
+import { getClinicianProfile } from "../services/authService";
+import { getPatientById } from "../services/patientService";
+import { getOrCreateScreeningReportPdf } from "../services/reportStorageService";
 import {
   subscribeToScreening,
   updateScreeningReview,
 } from "../services/screeningService";
 import { SCREENING_TESTS } from "../services/transports/screeningSchema";
-import { formatClinicalDateTime } from "../utils/formatters";
+import { calculateAge, formatClinicalDateTime } from "../utils/formatters";
+
+function formatValue(val, unit = "") {
+  if (val === null || val === undefined || val === "") return "Not recorded";
+  const num = Number(val);
+  if (Number.isNaN(num)) return "Not recorded";
+  return unit ? `${num} ${unit}` : String(num);
+}
+
+function getLatestKneeSnapshot(guidedTests) {
+  if (!guidedTests) return null;
+  const order = ["knee_bend_extend", "sit_to_stand_5x", "walk_10m"];
+  for (const id of order) {
+    const snap = guidedTests[id]?.sensorSnapshot;
+    if (snap && snap.processed) {
+      return { testId: id, ...snap };
+    }
+  }
+  return null;
+}
+
+function getLatestInsoleSnapshot(guidedTests) {
+  if (!guidedTests) return null;
+  const order = ["walk_10m", "sit_to_stand_5x", "knee_bend_extend"];
+  for (const id of order) {
+    const snap = guidedTests[id]?.insoleSnapshot;
+    if (snap) {
+      return { testId: id, ...snap };
+    }
+  }
+  return null;
+}
 
 export default function ScreeningResultPage() {
   const { screeningId } = useParams();
+  const { profile } = useAuth();
 
   const [screening, setScreening] = useState(null);
+  const [patient, setPatient] = useState(null);
+  const [fetchedDoctor, setFetchedDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -21,6 +59,10 @@ export default function ScreeningResultPage() {
   const [clinicianNotes, setClinicianNotes] = useState("");
   const [savingReview, setSavingReview] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfNotice, setPdfNotice] = useState("");
+  const [pdfError, setPdfError] = useState("");
 
   useEffect(() => {
     if (!screeningId) return undefined;
@@ -42,6 +84,66 @@ export default function ScreeningResultPage() {
     );
     return () => unsubscribe();
   }, [screeningId]);
+
+  useEffect(() => {
+    if (!screening?.patientId) return;
+    let active = true;
+    getPatientById(screening.patientId)
+      .then((rec) => {
+        if (active) setPatient(rec);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [screening?.patientId]);
+
+  const doctor = screening?.doctorSnapshot?.fullName
+    ? screening.doctorSnapshot
+    : profile?.fullName
+      ? profile
+      : fetchedDoctor;
+
+  useEffect(() => {
+    if (!screening || screening.doctorSnapshot?.fullName || profile?.fullName) {
+      return undefined;
+    }
+    if (!screening.doctorId) return undefined;
+    let active = true;
+    getClinicianProfile(screening.doctorId)
+      .then((docProfile) => {
+        if (active && docProfile) setFetchedDoctor(docProfile);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [screening, profile]);
+
+  const handleDownloadPdf = async (forceRegenerate = false) => {
+    if (!screening) return;
+    setPdfError("");
+    setPdfNotice("");
+    setPdfBusy(true);
+
+    try {
+      const result = await getOrCreateScreeningReportPdf({
+        screening,
+        patient,
+        doctor,
+        forceRegenerate,
+      });
+      setPdfNotice(
+        result.mode === "downloaded_existing"
+          ? "Downloaded stored PDF report from Firebase Storage."
+          : "Generated PDF report, uploaded to Firebase Storage, and started download."
+      );
+    } catch (err) {
+      setPdfError(err.message || "Unable to generate or download PDF report.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
 
   const handleSaveReview = async (event) => {
     event.preventDefault();
@@ -91,6 +193,13 @@ export default function ScreeningResultPage() {
     );
   }
 
+  const age = patient?.dateOfBirth ? calculateAge(patient.dateOfBirth) : null;
+  const kneeSnap = getLatestKneeSnapshot(screening.guidedTests);
+  const insoleSnap = getLatestInsoleSnapshot(screening.guidedTests);
+  const hasStoredReport =
+    screening.report?.status === "available" &&
+    Boolean(screening.report?.storagePath);
+
   const flexionPercent =
     screening.flexionDeg != null && screening.referenceFlexion
       ? Math.round((screening.flexionDeg / screening.referenceFlexion) * 100)
@@ -111,10 +220,10 @@ export default function ScreeningResultPage() {
           className="no-print inline-flex items-center gap-1.5 text-sm text-secondary hover:text-foreground mb-3"
         >
           <ArrowLeft size={15} strokeWidth={1.75} aria-hidden="true" />
-          {screening.patientId ? "Back to patient details" : "Back to dashboard"}
+          {screening.patientId ? "Return to patient history" : "Back to dashboard"}
         </Link>
 
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-border">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-4 border-b border-border">
           <div>
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-xl font-semibold text-foreground">
@@ -136,21 +245,37 @@ export default function ScreeningResultPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 no-print shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 no-print shrink-0">
             <button
               type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+              disabled={pdfBusy}
+              onClick={() => handleDownloadPdf(false)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
             >
-              <Printer size={15} strokeWidth={1.75} aria-hidden="true" />
-              Print report
+              <Download size={15} strokeWidth={1.75} aria-hidden="true" />
+              <span>{pdfBusy ? "Preparing PDF..." : "Download PDF"}</span>
             </button>
-            <Link
-              to={`/screening?patientId=${screening.patientId}`}
-              className="link-button px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
-            >
-              New screening
-            </Link>
+
+            {hasStoredReport && (
+              <button
+                type="button"
+                disabled={pdfBusy}
+                onClick={() => handleDownloadPdf(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-secondary hover:text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+              >
+                <RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />
+                <span>Regenerate PDF</span>
+              </button>
+            )}
+
+            {screening.patientId && (
+              <Link
+                to={`/patients/${screening.patientId}`}
+                className="link-button px-3.5 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+              >
+                View patient profile
+              </Link>
+            )}
           </div>
         </div>
       </div>
@@ -163,6 +288,70 @@ export default function ScreeningResultPage() {
           {error}
         </div>
       )}
+
+      {pdfError && (
+        <div
+          role="alert"
+          className="px-4 py-2.5 text-sm bg-danger-bg text-danger-text border border-danger-border rounded-sm"
+        >
+          {pdfError}
+        </div>
+      )}
+
+      {pdfNotice && (
+        <div
+          role="status"
+          className="px-4 py-2.5 text-sm bg-success-bg text-success-text border border-success-border rounded-sm"
+        >
+          {pdfNotice}
+        </div>
+      )}
+
+      {/* Patient & Clinician Context */}
+      <section className="bg-surface border border-border rounded-sm">
+        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-foreground">
+            Patient & clinician details
+          </h2>
+          <span className="text-xs text-secondary">
+            PDF Report:{" "}
+            <strong className="text-foreground">
+              {hasStoredReport
+                ? `Stored (${screening.report.fileName})`
+                : "Not yet generated"}
+            </strong>
+          </span>
+        </div>
+
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border">
+          <div className="bg-surface px-4 py-3">
+            <dt className="text-xs text-secondary">Patient name / MRN</dt>
+            <dd className="text-sm font-medium text-foreground mt-0.5">
+              {screening.patientName} ({screening.patientMrn})
+            </dd>
+          </div>
+          <div className="bg-surface px-4 py-3">
+            <dt className="text-xs text-secondary">Age / Target joint</dt>
+            <dd className="text-sm font-medium text-foreground mt-0.5">
+              {age !== null ? `${age} years · ` : ""}
+              {screening.side} {screening.jointType}
+            </dd>
+          </div>
+          <div className="bg-surface px-4 py-3">
+            <dt className="text-xs text-secondary">Doctor</dt>
+            <dd className="text-sm font-medium text-foreground mt-0.5">
+              {doctor?.fullName || "Not recorded"}
+            </dd>
+          </div>
+          <div className="bg-surface px-4 py-3">
+            <dt className="text-xs text-secondary">Clinic / Specialisation</dt>
+            <dd className="text-sm font-medium text-foreground mt-0.5">
+              {doctor?.department || "Outpatient Musculoskeletal Clinic"}
+              {doctor?.specialty ? ` · ${doctor.specialty}` : ""}
+            </dd>
+          </div>
+        </dl>
+      </section>
 
       {/* Assessment Summary Strip */}
       <section className="bg-surface border border-border rounded-sm divide-y divide-border">
@@ -191,16 +380,13 @@ export default function ScreeningResultPage() {
           <div className="text-xs text-secondary">Screening guidance</div>
           <p className="text-sm text-foreground">{screening.recommendation}</p>
           <p className="text-xs text-muted">
-            JointSense provides threshold-based screening support and is not a
-            medical diagnostic system.{" "}
-            {screening.mlModelIntegrated
-              ? ""
-              : "Automated ML model classification is not yet integrated."}
+            JointSense provides threshold-based screening assistance and does
+            not establish a confirmed clinical diagnosis.
           </p>
         </div>
       </section>
 
-      {/* Guided Test Completion Breakdown (when recorded via 3-test workflow) */}
+      {/* Guided Test Completion Breakdown */}
       {screening.guidedTests && (
         <section className="bg-surface border border-border rounded-sm">
           <div className="px-4 py-3 border-b border-border">
@@ -208,7 +394,7 @@ export default function ScreeningResultPage() {
               id="guided-tests-heading"
               className="text-base font-semibold text-foreground"
             >
-              Guided protocol summary
+              Guided protocol summary (3 tests)
             </h2>
           </div>
           <div
@@ -223,7 +409,8 @@ export default function ScreeningResultPage() {
                   <th scope="col">Test</th>
                   <th scope="col">Completion</th>
                   <th scope="col">Timer</th>
-                  <th scope="col">Data source</th>
+                  <th scope="col">Knee sleeve source</th>
+                  <th scope="col">Smart insole source</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,12 +433,113 @@ export default function ScreeningResultPage() {
                         {entry?.sensorSnapshot?.sourceType ||
                           "Clinician / Manual"}
                       </td>
+                      <td className="text-secondary">
+                        {entry?.insoleSnapshot?.deviceType || "Not captured"}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {/* Captured Knee Sleeve Sensor Snapshot (when present) */}
+      {kneeSnap && (
+        <section className="bg-surface border border-border rounded-sm">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <h2 className="text-base font-semibold text-foreground">
+              Captured knee sleeve sensor snapshot
+            </h2>
+            <span className="text-xs text-muted font-mono">
+              {kneeSnap.rtdbPath || "/knee_sleeve/live"}
+            </span>
+          </div>
+          <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Knee angle</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(kneeSnap.processed?.kneeAngleDeg, "°")}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Walking speed</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(kneeSnap.processed?.walkingSpeedMs, "m/s")}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Steps</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(kneeSnap.processed?.steps)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">ESP32 timestamp</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {kneeSnap.timing?.esp32Timestamp ?? "Not recorded"}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Vibration RMS</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(kneeSnap.processed?.vibration?.rms)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Vibration peak / spikes</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(kneeSnap.processed?.vibration?.peak)} /{" "}
+                {formatValue(kneeSnap.processed?.vibration?.spikes)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Accelerometer (X, Y, Z)</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(kneeSnap.rawImu?.acc?.x)},{" "}
+                {formatValue(kneeSnap.rawImu?.acc?.y)},{" "}
+                {formatValue(kneeSnap.rawImu?.acc?.z)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Gyroscope (X, Y, Z)</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(kneeSnap.rawImu?.gyro?.x)},{" "}
+                {formatValue(kneeSnap.rawImu?.gyro?.y)},{" "}
+                {formatValue(kneeSnap.rawImu?.gyro?.z)}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
+      {/* Captured Smart Insole Snapshot (only if real data was captured) */}
+      {insoleSnap && (
+        <section className="bg-surface border border-border rounded-sm">
+          <div className="px-4 py-3 border-b border-border">
+            <h2 className="text-base font-semibold text-foreground">
+              Captured smart insole snapshot
+            </h2>
+          </div>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Ankle angle</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {insoleSnap.ankle?.angle != null
+                  ? `${insoleSnap.ankle.angle} ${insoleSnap.ankle.unit || ""}`
+                  : "Not recorded"}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Sole pressure</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {insoleSnap.sole?.pressureDistribution
+                  ? "Recorded (see PDF report)"
+                  : "Not recorded"}
+              </dd>
+            </div>
+          </dl>
         </section>
       )}
 

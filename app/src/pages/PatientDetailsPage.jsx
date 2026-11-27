@@ -10,6 +10,7 @@ import {
   subscribeToPatient,
   updatePatient,
 } from "../services/patientService";
+import { downloadStoredReportPdf } from "../services/reportStorageService";
 import { subscribeToPatientScreenings } from "../services/screeningService";
 import {
   calculateAge,
@@ -30,6 +31,7 @@ export default function PatientDetailsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
     if (!patientId || !user?.uid) return undefined;
@@ -89,6 +91,22 @@ export default function PatientDetailsPage() {
       setError(err.message || "Failed to delete patient record.");
       setDeleting(false);
       setDeleteOpen(false);
+    }
+  };
+
+  const handleDownloadStoredPdf = async (screeningItem) => {
+    if (!screeningItem?.report?.storagePath) return;
+    setError("");
+    setDownloadingId(screeningItem.id);
+    try {
+      await downloadStoredReportPdf(
+        screeningItem.report.storagePath,
+        screeningItem.report.fileName
+      );
+    } catch (err) {
+      setError(err.message || "Unable to download stored PDF report.");
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -270,7 +288,7 @@ export default function PatientDetailsPage() {
                 <th scope="col">Risk level</th>
                 <th scope="col">Review status</th>
                 <th scope="col" className="text-right">
-                  Result
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -314,13 +332,30 @@ export default function PatientDetailsPage() {
                     <td>
                       <StatusBadge status={item.reviewStatus} />
                     </td>
-                    <td className="text-right whitespace-nowrap">
+                    <td className="text-right whitespace-nowrap space-x-3">
                       <Link
                         to={`/screenings/${item.id}`}
                         className="text-sm font-medium text-link hover:underline"
                       >
-                        Open result
+                        View Result
                       </Link>
+                      {item.report?.status === "available" &&
+                      item.report?.storagePath ? (
+                        <button
+                          type="button"
+                          disabled={downloadingId === item.id}
+                          onClick={() => handleDownloadStoredPdf(item)}
+                          className="text-sm text-secondary hover:text-foreground hover:underline"
+                        >
+                          {downloadingId === item.id
+                            ? "Downloading..."
+                            : "Download PDF"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted">
+                          Report unavailable
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))

@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 import { getFirestore, initializeFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const env = import.meta.env || {};
 
@@ -23,10 +24,15 @@ export const isRtdbConfigured = Boolean(
   isFirebaseConfigured && firebaseConfig.databaseURL
 );
 
+export const isStorageConfigured = Boolean(
+  isFirebaseConfigured && firebaseConfig.storageBucket
+);
+
 let firebaseApp = null;
 let auth = null;
 let db = null;
 let rtdb = null;
+let storage = null;
 
 if (isFirebaseConfigured) {
   const existingApps = getApps();
@@ -43,6 +49,9 @@ if (isFirebaseConfigured) {
   if (firebaseConfig.databaseURL) {
     rtdb = getDatabase(firebaseApp, firebaseConfig.databaseURL);
   }
+  if (firebaseConfig.storageBucket) {
+    storage = getStorage(firebaseApp);
+  }
 }
 
-export { firebaseApp, auth, db, rtdb };
+export { firebaseApp, auth, db, rtdb, storage };
