@@ -47,6 +47,8 @@ function createInitialTestStates() {
       manualValues: { walkDurationSec: "" },
       telemetry: null,
       insoleTelemetry: null,
+      kneeInterrupted: false,
+      insoleInterrupted: false,
     },
     sit_to_stand_5x: {
       completed: false,
@@ -54,6 +56,8 @@ function createInitialTestStates() {
       manualValues: { sitToStandSec: "" },
       telemetry: null,
       insoleTelemetry: null,
+      kneeInterrupted: false,
+      insoleInterrupted: false,
     },
     knee_bend_extend: {
       completed: false,
@@ -61,6 +65,8 @@ function createInitialTestStates() {
       manualValues: { flexionDeg: "", extensionDeficitDeg: "" },
       telemetry: null,
       insoleTelemetry: null,
+      kneeInterrupted: false,
+      insoleInterrupted: false,
     },
   };
 }
@@ -91,6 +97,10 @@ export default function ScreeningPage() {
   const [side, setSide] = useState("Right");
 
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const activeStepIndexRef = useRef(0);
+  useEffect(() => {
+    activeStepIndexRef.current = activeStepIndex;
+  }, [activeStepIndex]);
   const [testStates, setTestStates] = useState(createInitialTestStates);
   const [symptomForm, setSymptomForm] = useState({
     painScore: "",
@@ -163,13 +173,31 @@ export default function ScreeningPage() {
         setTestStates((prev) => {
           const existing = prev[snapshot.testId];
           if (!existing) return prev;
-          return {
-            ...prev,
-            [snapshot.testId]: {
-              ...existing,
-              telemetry: snapshot,
-            },
-          };
+
+          if (snapshot.isLive && snapshot.timing?.receivedAtMs) {
+            return {
+              ...prev,
+              [snapshot.testId]: {
+                ...existing,
+                telemetry: snapshot,
+                kneeInterrupted: false,
+              },
+            };
+          }
+
+          // Retain last valid live reading if sensor goes stale or disconnects mid-test
+          if (existing.telemetry?.timing?.receivedAtMs) {
+            return {
+              ...prev,
+              [snapshot.testId]: {
+                ...existing,
+                kneeInterrupted:
+                  Boolean(snapshot.isStale) || existing.kneeInterrupted,
+              },
+            };
+          }
+
+          return prev;
         });
       }
     });
@@ -183,24 +211,45 @@ export default function ScreeningPage() {
   useEffect(() => {
     const unsubscribe = insoleAdapter.subscribe((snapshot) => {
       setInsoleTelemetry(snapshot);
-      if (snapshot?.timing?.receivedAtMs) {
-        const currentTest = SCREENING_TESTS[activeStepIndex];
-        if (!currentTest) return;
-        setTestStates((prev) => ({
-          ...prev,
-          [currentTest.id]: {
-            ...prev[currentTest.id],
-            insoleTelemetry: snapshot,
-          },
-        }));
-      }
+      const currentTest = SCREENING_TESTS[activeStepIndexRef.current];
+      if (!currentTest) return;
+
+      setTestStates((prev) => {
+        const existing = prev[currentTest.id];
+        if (!existing) return prev;
+
+        if (snapshot?.isLive && snapshot?.timing?.receivedAtMs) {
+          return {
+            ...prev,
+            [currentTest.id]: {
+              ...existing,
+              insoleTelemetry: snapshot,
+              insoleInterrupted: false,
+            },
+          };
+        }
+
+        // Retain last valid live reading if insole goes stale or disconnects mid-test
+        if (existing.insoleTelemetry?.timing?.receivedAtMs) {
+          return {
+            ...prev,
+            [currentTest.id]: {
+              ...existing,
+              insoleInterrupted:
+                Boolean(snapshot?.isStale) || existing.insoleInterrupted,
+            },
+          };
+        }
+
+        return prev;
+      });
     });
 
     return () => {
       unsubscribe();
       insoleAdapter.disconnect().catch(() => {});
     };
-  }, [insoleAdapter, activeStepIndex]);
+  }, [insoleAdapter]);
 
   useEffect(() => {
     const activeTest = SCREENING_TESTS[activeStepIndex];
@@ -276,39 +325,43 @@ export default function ScreeningPage() {
     }
   };
 
-  const handleConnectTransport = async () => {
+  const handleConnectAllSensors = async () => {
     if (!selectedPatient) {
-      setConnectError("Select a patient before starting the sensor listener.");
+      setConnectError("Select a patient before starting the sensor listeners.");
       return;
     }
     setConnectError("");
-    try {
-      await adapter.connect();
-    } catch (err) {
-      setConnectError(err.message || "Unable to connect to Firebase.");
+    setInsoleConnectError("");
+
+    const [kneeRes, insoleRes] = await Promise.allSettled([
+      adapter.connect(),
+      insoleAdapter.connect(),
+    ]);
+
+    if (kneeRes.status === "rejected") {
+      setConnectError(
+        kneeRes.reason?.message || "Unable to connect knee sleeve listener."
+      );
+    }
+    if (insoleRes.status === "rejected") {
+      setInsoleConnectError(
+        insoleRes.reason?.message || "Unable to connect smart insole listener."
+      );
     }
   };
 
-  const handleDisconnectTransport = async () => {
+  const handleDisconnectAllSensors = async () => {
+    setConnectError("");
+    setInsoleConnectError("");
+    await Promise.allSettled([
+      adapter.disconnect(),
+      insoleAdapter.disconnect(),
+    ]);
+  };
+
+  const handleDisconnectKnee = async () => {
     setConnectError("");
     await adapter.disconnect();
-  };
-
-  const handleConnectInsole = async () => {
-    if (!selectedPatient) {
-      setInsoleConnectError(
-        "Select a patient before starting the smart insole listener."
-      );
-      return;
-    }
-    setInsoleConnectError("");
-    try {
-      await insoleAdapter.connect();
-    } catch (err) {
-      setInsoleConnectError(
-        err.message || "Smart insole listener is not ready yet."
-      );
-    }
   };
 
   const handleDisconnectInsole = async () => {
@@ -506,9 +559,6 @@ export default function ScreeningPage() {
       ? getTest3Copy(lang, jointType)
       : copy.tests[activeTest.id]
     : null;
-  const insoleChipText = insoleCapabilities.isIntegrationReady
-    ? `${copy.insoleChipReady}: ${insoleTelemetry.connectionStatus}`
-    : copy.insoleChipPending;
 
   return (
     <div className="space-y-5">
@@ -635,15 +685,19 @@ export default function ScreeningPage() {
             </div>
           </section>
 
-          {/* Compact Sensor Status Bar */}
+          {/* Dual-Sensor Monitoring Section */}
           <DeviceStatusBar
             telemetry={telemetry}
             capabilities={capabilities}
-            insoleStatus={insoleChipText}
+            insoleTelemetry={insoleTelemetry}
+            insoleCapabilities={insoleCapabilities}
             disabled={!selectedPatient}
-            onConnect={handleConnectTransport}
-            onDisconnect={handleDisconnectTransport}
+            onConnectAll={handleConnectAllSensors}
+            onDisconnectAll={handleDisconnectAllSensors}
+            onDisconnectKnee={handleDisconnectKnee}
+            onDisconnectInsole={handleDisconnectInsole}
             connectError={connectError}
+            insoleConnectError={insoleConnectError}
           />
 
           {!selectedPatient && (
@@ -936,10 +990,6 @@ export default function ScreeningPage() {
                     <InsoleVisualisations
                       insoleTelemetry={insoleTelemetry}
                       capabilities={insoleCapabilities}
-                      disabled={!selectedPatient}
-                      onConnect={handleConnectInsole}
-                      onDisconnect={handleDisconnectInsole}
-                      connectError={insoleConnectError}
                     />
                   </div>
                 )}
