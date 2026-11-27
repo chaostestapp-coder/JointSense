@@ -3,14 +3,20 @@ import { isRtdbConfigured, rtdb } from "../../config/firebase.js";
 import {
   createEmptyInsoleTelemetry,
   INSOLE_CONNECTION_STATUS,
+  mapShoeInsolePayload,
   normalizeInsolePayload,
 } from "./insoleSchema.js";
 
+const DEFAULT_SHOE_RTDB_PATH = "/shoe/live";
 const DEFAULT_STALE_TIMEOUT_MS = 3000;
 const MAX_HISTORY_SAMPLES = 40;
 
 export function getConfiguredInsoleRtdbPath() {
-  return import.meta.env?.VITE_FIREBASE_RTDB_INSOLE_PATH || "";
+  return (
+    import.meta.env?.VITE_FIREBASE_RTDB_SHOE_PATH ||
+    import.meta.env?.VITE_FIREBASE_RTDB_INSOLE_PATH ||
+    DEFAULT_SHOE_RTDB_PATH
+  );
 }
 
 export function getConfiguredInsoleStaleTimeoutMs() {
@@ -38,7 +44,10 @@ export function createFirebaseInsoleTransport(options = {}) {
       : getConfiguredInsoleRtdbPath();
   const staleTimeoutMs =
     options.staleTimeoutMs || getConfiguredInsoleStaleTimeoutMs();
-  const payloadMapper = options.payloadMapper || null;
+  const payloadMapper =
+    options.payloadMapper !== undefined
+      ? options.payloadMapper
+      : mapShoeInsolePayload;
   const subscribeImpl = options.onValueImpl || onValue;
   const refImpl = options.refImpl || ref;
   const nowFn = options.nowFn || (() => Date.now());
@@ -144,8 +153,11 @@ export function createFirebaseInsoleTransport(options = {}) {
     const receivedAtMs = nowFn();
     const sample = {
       receivedAtMs,
+      shoeAngleDeg: parsed.processed?.shoeAngleDeg ?? parsed.ankle.angle,
       ankleAngle: parsed.ankle.angle,
       ankleUnit: parsed.ankle.unit,
+      totalPressure: parsed.processed?.fsr?.total ?? null,
+      footContact: parsed.processed?.footContact ?? null,
     };
     historyBuffer = [...historyBuffer, sample].slice(-MAX_HISTORY_SAMPLES);
 
@@ -157,6 +169,8 @@ export function createFirebaseInsoleTransport(options = {}) {
         isLive: true,
         isStale: false,
         statusMessage: `Receiving smart insole payloads from ${rtdbPath}.`,
+        processed: parsed.processed,
+        rawImu: parsed.rawImu,
         sole: parsed.sole,
         ankle: parsed.ankle,
         timing: {
