@@ -16,16 +16,6 @@ import { getPendingScreenings } from "../../services/offlineSyncService";
 import { syncQueuedScreenings } from "../../services/screeningService";
 import { SCREENING_COPY } from "../../utils/screeningTranslations";
 
-function getPageTitle(pathname) {
-  if (pathname === "/") return "Doctor Dashboard";
-  if (pathname === "/patients") return "Patient Management";
-  if (pathname.startsWith("/patients/")) return "Patient Details";
-  if (pathname === "/screening") return "Guided Screening";
-  if (pathname.startsWith("/screenings/")) return "Screening Result";
-  if (pathname === "/settings") return "Settings";
-  return "JointSense";
-}
-
 export default function AppShell() {
   const { user, profile, signOut } = useAuth();
   const { lang } = useLanguage();
@@ -33,7 +23,7 @@ export default function AppShell() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
@@ -124,7 +114,10 @@ export default function AppShell() {
         </button>
       </div>
 
-      <nav aria-label="Primary navigation" className="flex-1 px-3 py-4 space-y-1">
+      <nav
+        aria-label="Primary navigation"
+        className="flex-1 px-3 py-4 space-y-1"
+      >
         {navItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
@@ -169,23 +162,35 @@ export default function AppShell() {
       </aside>
 
       {/* Mobile Sidebar Overlay */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden flex no-print">
-          <div
-            className="fixed inset-0 bg-foreground/30"
-            onClick={() => setMobileMenuOpen(false)}
-            aria-hidden="true"
-          />
-          <aside className="relative z-50 w-60 max-w-[80vw] bg-surface border-r border-border h-full">
-            {navContent}
-          </aside>
-        </div>
-      )}
+      <div
+        className={`fixed inset-0 z-40 flex lg:hidden no-print ${
+          mobileMenuOpen ? "pointer-events-auto" : "pointer-events-none"
+        }`}
+        aria-hidden={!mobileMenuOpen}
+        inert={!mobileMenuOpen}
+      >
+        {/* Backdrop */}
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className={`absolute inset-0 bg-black/30 transition-opacity duration-380 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+            mobileMenuOpen ? "opacity-100" : "opacity-0"
+          }`}
+        />
+
+        {/* Sidebar */}
+        <aside
+          className={`relative z-50 w-60 max-w-[80vw] h-full bg-surface border-r border-border transform-gpu transition-transform duration-420 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+            mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          {navContent}
+        </aside>
+      </div>
 
       {/* Main Column */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 bg-surface border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4 no-print">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="h-14 bg-surface border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4 no-print lg:hidden">
+          <div className="w-full flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -194,9 +199,7 @@ export default function AppShell() {
             >
               <Menu size={18} strokeWidth={1.75} />
             </button>
-            <div className="text-sm font-medium text-secondary truncate">
-              {getPageTitle(location.pathname)}
-            </div>
+            <span className="text-base text-center w-full block">JointSense</span>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
@@ -216,12 +219,6 @@ export default function AppShell() {
                 {syncing ? "Syncing..." : `Sync ${pendingCount} queued`}
               </button>
             )}
-            <Link
-              to="/screening"
-              className="link-button inline-flex items-center px-3 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
-            >
-              Start screening
-            </Link>
           </div>
         </header>
 
