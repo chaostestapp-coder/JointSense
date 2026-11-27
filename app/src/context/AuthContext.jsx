@@ -16,22 +16,36 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = subscribeToAuthState(async (firebaseUser) => {
+    let active = true;
+
+    const unsubscribe = subscribeToAuthState((firebaseUser) => {
+      if (!active) return;
+
       setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          const docProfile = await getClinicianProfile(firebaseUser.uid);
-          setProfile(docProfile);
-        } catch {
-          setProfile(null);
-        }
-      } else {
-        setProfile(null);
-      }
       setLoading(false);
+
+      if (!firebaseUser) {
+        setProfile(null);
+        return;
+      }
+
+      getClinicianProfile(firebaseUser.uid)
+        .then((docProfile) => {
+          if (active) {
+            setProfile(docProfile);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setProfile(null);
+          }
+        });
     });
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   const value = {

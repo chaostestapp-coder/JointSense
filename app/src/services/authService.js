@@ -118,5 +118,7 @@ export function subscribeToAuthState(callback) {
     callback(null);
     return () => {};
   }
-  return onAuthStateChanged(auth, callback);
+  return onAuthStateChanged(auth, callback, () => {
+    callback(null);
+  });
 }

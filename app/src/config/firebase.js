@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -20,9 +20,17 @@ let auth = null;
 let db = null;
 
 if (isFirebaseConfigured) {
-  firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const existingApps = getApps();
+  if (existingApps.length > 0) {
+    firebaseApp = getApp();
+    db = getFirestore(firebaseApp);
+  } else {
+    firebaseApp = initializeApp(firebaseConfig);
+    db = initializeFirestore(firebaseApp, {
+      experimentalAutoDetectLongPolling: true,
+    });
+  }
   auth = getAuth(firebaseApp);
-  db = getFirestore(firebaseApp);
 }
 
 export { firebaseApp, auth, db };
