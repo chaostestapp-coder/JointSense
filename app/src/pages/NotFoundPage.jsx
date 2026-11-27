@@ -9,7 +9,7 @@ export default function NotFoundPage() {
       </p>
       <Link
         to="/"
-        className="link-button inline-flex items-center px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-[4px]"
+        className="link-button inline-flex items-center px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
       >
         Return to dashboard
       </Link>
