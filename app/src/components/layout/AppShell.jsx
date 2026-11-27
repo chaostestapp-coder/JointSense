@@ -5,20 +5,16 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Settings,
   Users,
   WifiOff,
   X,
 } from "lucide-react";
 import { useAuth } from "../../context/useAuth";
+import { useLanguage } from "../../context/useLanguage";
 import { getPendingScreenings } from "../../services/offlineSyncService";
 import { syncQueuedScreenings } from "../../services/screeningService";
-import ThemeToggle from "../common/ThemeToggle";
-
-const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/patients", label: "Patients", icon: Users, end: false },
-  { to: "/screening", label: "New Screening", icon: ClipboardCheck, end: false },
-];
+import { SCREENING_COPY } from "../../utils/screeningTranslations";
 
 function getPageTitle(pathname) {
   if (pathname === "/") return "Doctor Dashboard";
@@ -26,11 +22,14 @@ function getPageTitle(pathname) {
   if (pathname.startsWith("/patients/")) return "Patient Details";
   if (pathname === "/screening") return "Guided Screening";
   if (pathname.startsWith("/screenings/")) return "Screening Result";
+  if (pathname === "/settings") return "Settings";
   return "JointSense";
 }
 
 export default function AppShell() {
   const { user, profile, signOut } = useAuth();
+  const { lang } = useLanguage();
+  const copy = SCREENING_COPY[lang] || SCREENING_COPY.en;
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(
@@ -39,10 +38,20 @@ export default function AppShell() {
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
 
+  const navItems = [
+    { to: "/", label: copy.nav.dashboard, icon: LayoutDashboard, end: true },
+    { to: "/patients", label: copy.nav.patients, icon: Users, end: false },
+    {
+      to: "/screening",
+      label: copy.nav.screening,
+      icon: ClipboardCheck,
+      end: false,
+    },
+    { to: "/settings", label: copy.nav.settings, icon: Settings, end: false },
+  ];
+
   const clinicianName =
     profile?.fullName || user?.displayName || user?.email || "Clinician";
-  const clinicianDept =
-    profile?.department || "Outpatient Musculoskeletal Clinic";
 
   useEffect(() => {
     const refreshQueue = async () => {
@@ -116,7 +125,7 @@ export default function AppShell() {
       </div>
 
       <nav aria-label="Primary navigation" className="flex-1 px-3 py-4 space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+        {navItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -140,11 +149,10 @@ export default function AppShell() {
         <div className="text-sm font-semibold text-foreground truncate">
           {clinicianName}
         </div>
-        <div className="text-xs text-muted truncate mt-0.5">{clinicianDept}</div>
         <button
           type="button"
           onClick={handleSignOut}
-          className="mt-3 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-secondary hover:text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
+          className="mt-2.5 w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-secondary hover:text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
         >
           <LogOut size={14} strokeWidth={1.75} aria-hidden="true" />
           <span>Sign out</span>
@@ -205,15 +213,9 @@ export default function AppShell() {
                 onClick={handleManualSync}
                 className="px-2.5 py-1 text-xs font-medium bg-info-bg text-info-text border border-info-border rounded-sm"
               >
-                {syncing
-                  ? "Syncing..."
-                  : `Sync ${pendingCount} queued`}
+                {syncing ? "Syncing..." : `Sync ${pendingCount} queued`}
               </button>
             )}
-            <span className="hidden md:inline text-xs text-muted">
-              {user?.email}
-            </span>
-            <ThemeToggle />
             <Link
               to="/screening"
               className="link-button inline-flex items-center px-3 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
