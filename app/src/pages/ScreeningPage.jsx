@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Pause, Play, RotateCcw } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Pause,
+  Play,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import DeviceStatusBar from "../components/screening/DeviceStatusBar";
 import InsoleVisualisations from "../components/screening/InsoleVisualisations";
 import MovementIllustration from "../components/screening/MovementIllustration";
@@ -8,6 +16,7 @@ import ScreeningSummaryStep from "../components/screening/ScreeningSummaryStep";
 import SensorVisualisations from "../components/screening/SensorVisualisations";
 import TestStepper from "../components/screening/TestStepper";
 import { useAuth } from "../context/useAuth";
+import { useLanguage } from "../context/useLanguage";
 import { subscribeToPatients } from "../services/patientService";
 import {
   evaluateClinicalScreening,
@@ -20,6 +29,12 @@ import {
   SCREENING_TESTS,
 } from "../services/transports/screeningSchema";
 import { createFirebaseRtdbTransport } from "../services/transports/firebaseRtdbTransport";
+import { getTest3Copy, SCREENING_COPY } from "../utils/screeningTranslations";
+import {
+  isSpeechSynthesisSupported,
+  speakText,
+  stopSpeaking,
+} from "../utils/speechHelper";
 
 const JOINT_OPTIONS = ["Knee", "Hip", "Shoulder", "Ankle"];
 const SIDE_OPTIONS = ["Right", "Left", "Bilateral"];
@@ -58,9 +73,12 @@ function formatTimer(seconds) {
 
 export default function ScreeningPage() {
   const { user, profile } = useAuth();
+  const { lang } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedPatientId = searchParams.get("patientId") || "";
+
+  const copy = SCREENING_COPY[lang] || SCREENING_COPY.en;
 
   const [patients, setPatients] = useState([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
@@ -83,6 +101,11 @@ export default function ScreeningPage() {
     instabilityReported: false,
     clinicalObservations: "",
   });
+
+  // Doctor live sensor drawer (collapsed by default for ASHA clarity)
+  const [showDoctorView, setShowDoctorView] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState("");
 
   // Firebase RTDB live sensor listener (Knee Sleeve)
   const adapter = useMemo(() => createFirebaseRtdbTransport(), []);
@@ -108,6 +131,8 @@ export default function ScreeningPage() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const timerStartRef = useRef(0);
 
+  const speechSupported = isSpeechSynthesisSupported();
+
   useEffect(() => {
     if (!user?.uid) return undefined;
     const unsubscribe = subscribeToPatients(
@@ -131,7 +156,6 @@ export default function ScreeningPage() {
     return () => unsubscribe();
   }, [user?.uid, preselectedPatientId]);
 
-  // Manage active hardware/demo transport subscription
   useEffect(() => {
     const unsubscribe = adapter.subscribe((snapshot) => {
       setTelemetry(snapshot);
@@ -156,7 +180,6 @@ export default function ScreeningPage() {
     };
   }, [adapter]);
 
-  // Independent Smart Insole subscription
   useEffect(() => {
     const unsubscribe = insoleAdapter.subscribe((snapshot) => {
       setInsoleTelemetry(snapshot);
@@ -179,7 +202,6 @@ export default function ScreeningPage() {
     };
   }, [insoleAdapter, activeStepIndex]);
 
-  // Keep transport notified when active test changes
   useEffect(() => {
     const activeTest = SCREENING_TESTS[activeStepIndex];
     if (activeTest) {
@@ -187,7 +209,6 @@ export default function ScreeningPage() {
     }
   }, [adapter, activeStepIndex]);
 
-  // Stopwatch interval
   useEffect(() => {
     if (!timerRunning) return undefined;
     const interval = setInterval(() => {
@@ -197,6 +218,36 @@ export default function ScreeningPage() {
     }, 100);
     return () => clearInterval(interval);
   }, [timerRunning]);
+
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
+  }, []);
+
+  const stopSpeech = () => {
+    stopSpeaking();
+    setIsSpeaking(false);
+  };
+
+  const handleToggleSpeech = (testCopy) => {
+    if (!speechSupported || !testCopy) return;
+    setSpeechError("");
+    if (isSpeaking) {
+      stopSpeech();
+      return;
+    }
+
+    const text = `${testCopy.name}. ${testCopy.instructions.join(" ")}`;
+    speakText(text, lang, {
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: (msg) => {
+        setIsSpeaking(false);
+        setSpeechError(msg);
+      },
+    });
+  };
 
   const selectedPatient = useMemo(
     () => patients.find((p) => p.id === patientId) || null,
@@ -216,6 +267,7 @@ export default function ScreeningPage() {
   const isSummaryStep = activeStepIndex >= SCREENING_TESTS.length;
 
   const handleSelectStep = (nextIndex) => {
+    stopSpeech();
     setTimerRunning(false);
     setActiveStepIndex(nextIndex);
     const targetTest = SCREENING_TESTS[nextIndex];
@@ -311,10 +363,12 @@ export default function ScreeningPage() {
 
   const handleCompleteTest = async () => {
     if (!activeTest) return;
+    stopSpeech();
     setTimerRunning(false);
     await adapter.completeTest();
 
-    const capturedDuration = elapsedSec > 0 ? Number(elapsedSec.toFixed(1)) : null;
+    const capturedDuration =
+      elapsedSec > 0 ? Number(elapsedSec.toFixed(1)) : null;
 
     setTestStates((prev) => {
       const current = prev[activeTest.id];
@@ -434,7 +488,7 @@ export default function ScreeningPage() {
 
       if (result.mode === "offline_queued") {
         setOfflineNotice(
-          "You are currently offline. This screening has been safely queued in local IndexedDB storage and will sync automatically when connectivity returns."
+          "You are currently offline. This screening is saved on this device and will sync when internet returns."
         );
         setSubmitting(false);
         return;
@@ -447,23 +501,30 @@ export default function ScreeningPage() {
     }
   };
 
+  const activeTestCopy = activeTest
+    ? activeTest.id === "knee_bend_extend"
+      ? getTest3Copy(lang, jointType)
+      : copy.tests[activeTest.id]
+    : null;
+  const insoleChipText = insoleCapabilities.isIntegrationReady
+    ? `${copy.insoleChipReady}: ${insoleTelemetry.connectionStatus}`
+    : copy.insoleChipPending;
+
   return (
     <div className="space-y-5">
       <div className="pb-4 border-b border-border flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">
-            Guided knee screening workflow
+            {copy.pageTitle}
           </h1>
-          <p className="text-sm text-secondary mt-1">
-            Three-part functional assessment with wearable telemetry support and
-            threshold-based clinical review.
-          </p>
+          <p className="text-sm text-secondary mt-1">{copy.pageSubtitle}</p>
         </div>
+
         <Link
           to="/patients"
           className="text-sm font-medium text-link hover:underline shrink-0"
         >
-          Manage patient directory
+          {copy.managePatients}
         </Link>
       </div>
 
@@ -494,8 +555,7 @@ export default function ScreeningPage() {
             No registered patients available
           </h2>
           <p className="text-sm text-secondary">
-            Register a patient in Patient Management before starting a guided
-            screening session.
+            Register a patient in Patient Management before starting a screening.
           </p>
           <Link
             to="/patients"
@@ -506,7 +566,7 @@ export default function ScreeningPage() {
         </div>
       ) : (
         <>
-          {/* Step 1: Patient & Joint Context */}
+          {/* Patient & Joint Selector */}
           <section className="bg-surface border border-border rounded-sm p-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5 items-end">
               <div className="md:col-span-2">
@@ -514,15 +574,15 @@ export default function ScreeningPage() {
                   htmlFor="screening-patient"
                   className="block text-xs font-medium text-secondary mb-1"
                 >
-                  Patient <span aria-hidden="true">*</span>
+                  {copy.patientLabel} <span aria-hidden="true">*</span>
                 </label>
                 <select
                   id="screening-patient"
                   value={patientId}
                   onChange={(e) => handlePatientChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
+                  className="w-full px-3 py-2.5 bg-surface border border-border rounded-sm text-sm text-foreground"
                 >
-                  <option value="">Select a registered patient...</option>
+                  <option value="">{copy.patientPlaceholder}</option>
                   {patients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.fullName} ({p.mrn})
@@ -536,13 +596,13 @@ export default function ScreeningPage() {
                   htmlFor="screening-joint"
                   className="block text-xs font-medium text-secondary mb-1"
                 >
-                  Target joint
+                  {copy.jointLabel}
                 </label>
                 <select
                   id="screening-joint"
                   value={jointType}
                   onChange={(e) => setJointType(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
+                  className="w-full px-3 py-2.5 bg-surface border border-border rounded-sm text-sm text-foreground"
                 >
                   {JOINT_OPTIONS.map((joint) => (
                     <option key={joint} value={joint}>
@@ -557,13 +617,13 @@ export default function ScreeningPage() {
                   htmlFor="screening-side"
                   className="block text-xs font-medium text-secondary mb-1"
                 >
-                  Laterality
+                  {copy.sideLabel}
                 </label>
                 <select
                   id="screening-side"
                   value={side}
                   onChange={(e) => setSide(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
+                  className="w-full px-3 py-2.5 bg-surface border border-border rounded-sm text-sm text-foreground"
                 >
                   {SIDE_OPTIONS.map((opt) => (
                     <option key={opt} value={opt}>
@@ -575,10 +635,11 @@ export default function ScreeningPage() {
             </div>
           </section>
 
-          {/* Firebase RTDB Live Sensor Status */}
+          {/* Compact Sensor Status Bar */}
           <DeviceStatusBar
             telemetry={telemetry}
             capabilities={capabilities}
+            insoleStatus={insoleChipText}
             disabled={!selectedPatient}
             onConnect={handleConnectTransport}
             onDisconnect={handleDisconnectTransport}
@@ -590,12 +651,11 @@ export default function ScreeningPage() {
               role="status"
               className="px-4 py-2.5 text-sm bg-warning-bg text-warning-text border border-warning-border rounded-sm"
             >
-              Select a registered patient above before starting the screening
-              tests or sensor listener.
+              {copy.selectPatientPrompt}
             </div>
           )}
 
-          {/* 3-Test + Summary Stepper */}
+          {/* Stepper */}
           <TestStepper
             activeStepIndex={activeStepIndex}
             completedTests={testStates}
@@ -604,63 +664,94 @@ export default function ScreeningPage() {
           />
 
           {/* Active Guided Test Workspace or Summary Step */}
-          {!isSummaryStep && activeTest ? (
+          {!isSummaryStep && activeTest && activeTestCopy ? (
             <section className="bg-surface border border-border rounded-sm divide-y divide-border">
-              {/* Test Header & Instructions + Visual Demonstration */}
               <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                <div className="lg:col-span-7 space-y-3">
+                <div className="lg:col-span-7 space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold text-foreground">
-                      Test {activeTest.order}: {activeTest.name}
-                    </h2>
-                    <span className="text-xs font-medium text-secondary">
-                      {testStates[activeTest.id]?.completed
-                        ? "Completed"
-                        : "In progress"}
-                    </span>
+                    <div>
+                      <div className="text-xs font-medium text-secondary">
+                        {copy.stepPrefix} {activeTest.order} {copy.ofText}{" "}
+                        {SCREENING_TESTS.length}
+                      </div>
+                      <h2 className="text-xl font-semibold text-foreground mt-0.5">
+                        {activeTestCopy.name}
+                      </h2>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {speechSupported && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSpeech(activeTestCopy)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
+                        >
+                          {isSpeaking ? (
+                            <>
+                              <VolumeX size={14} strokeWidth={1.75} aria-hidden="true" />
+                              <span>{copy.stopAudio}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                              <span>{copy.readAloud}</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <span className="px-2 py-1 text-xs font-medium bg-surface-muted border border-border rounded-[3px] text-secondary">
+                        {testStates[activeTest.id]?.completed
+                          ? copy.completedBadge
+                          : copy.inProgressBadge}
+                      </span>
+                    </div>
                   </div>
 
-                  <p className="text-sm text-secondary">{activeTest.purpose}</p>
+                  <p className="text-sm text-secondary">
+                    {activeTestCopy.purpose}
+                  </p>
 
-                  <div className="pt-1">
-                    <h3 className="text-xs font-semibold text-foreground mb-1.5">
-                      Instructions for the patient
+                  <div className="p-3.5 bg-surface-muted/40 border border-border rounded-sm">
+                    <h3 className="text-xs font-semibold text-foreground mb-2">
+                      {copy.instructionsHeading}
                     </h3>
-                    <ol className="list-decimal list-inside space-y-1 text-sm text-foreground">
-                      {activeTest.patientInstructions.map((step, idx) => (
+                    <ol className="list-decimal list-inside space-y-1.5 text-sm text-foreground">
+                      {activeTestCopy.instructions.map((step, idx) => (
                         <li key={idx}>{step}</li>
                       ))}
                     </ol>
                   </div>
 
-                  {activeTest.completionCriteria && (
-                    <div className="px-3 py-2 bg-surface-muted/50 border border-border rounded-sm text-xs text-secondary">
-                      <strong className="text-foreground">How to finish: </strong>
-                      {activeTest.completionCriteria}
+                  {speechError && (
+                    <div
+                      role="status"
+                      className="px-3 py-2 text-xs bg-warning-bg text-warning-text border border-warning-border rounded-sm"
+                    >
+                      {speechError}
                     </div>
                   )}
 
-                  {/* Test Controls & Stopwatch */}
-                  <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
+                  {/* Large Touch-Friendly Controls */}
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       {!timerRunning ? (
                         <button
                           type="button"
                           disabled={!selectedPatient}
                           onClick={handleStartTest}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
+                          className="min-h-12 inline-flex items-center gap-2 px-5 py-2.5 text-base font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
                         >
-                          <Play size={14} strokeWidth={1.75} aria-hidden="true" />
-                          <span>Start test</span>
+                          <Play size={16} strokeWidth={1.75} aria-hidden="true" />
+                          <span>{copy.startTest}</span>
                         </button>
                       ) : (
                         <button
                           type="button"
                           onClick={handlePauseTest}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
+                          className="min-h-12 inline-flex items-center gap-2 px-5 py-2.5 text-base font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
                         >
-                          <Pause size={14} strokeWidth={1.75} aria-hidden="true" />
-                          <span>Pause</span>
+                          <Pause size={16} strokeWidth={1.75} aria-hidden="true" />
+                          <span>{copy.pauseTest}</span>
                         </button>
                       )}
 
@@ -668,26 +759,26 @@ export default function ScreeningPage() {
                         type="button"
                         disabled={!selectedPatient}
                         onClick={handleResetTest}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-secondary hover:text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+                        className="min-h-12 inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-secondary hover:text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
                       >
-                        <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" />
-                        <span>Reset</span>
+                        <RotateCcw size={15} strokeWidth={1.75} aria-hidden="true" />
+                        <span>{copy.resetTest}</span>
                       </button>
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <div className="text-sm font-mono font-semibold text-foreground px-2.5 py-1 bg-surface-muted border border-border rounded-sm">
+                      <div className="min-h-12 flex items-center text-base font-mono font-semibold text-foreground px-3.5 bg-surface-muted border border-border rounded-sm">
                         {formatTimer(elapsedSec)}
                       </div>
                       <button
                         type="button"
                         disabled={!selectedPatient}
                         onClick={handleCompleteTest}
-                        className="px-4 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+                        className="min-h-12 px-5 py-2.5 text-base font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
                       >
                         {activeStepIndex === SCREENING_TESTS.length - 1
-                          ? "Complete & review summary"
-                          : "Complete & next test"}
+                          ? copy.finishSummary
+                          : copy.finishNext}
                       </button>
                     </div>
                   </div>
@@ -698,7 +789,7 @@ export default function ScreeningPage() {
                 </div>
               </div>
 
-              {/* Manual / Clinician Reference Entry for Active Test */}
+              {/* Simple Measurement Input for the Active Test */}
               <div className="px-5 py-3.5 bg-surface-muted/30 flex flex-col sm:flex-row sm:items-end gap-4">
                 {activeTest.id === "walk_10m" && (
                   <div className="w-full sm:w-64">
@@ -706,7 +797,7 @@ export default function ScreeningPage() {
                       htmlFor="manual-walk-sec"
                       className="block text-xs font-medium text-secondary mb-1"
                     >
-                      Recorded 10 m walk time (seconds)
+                      {activeTestCopy.timeInputLabel}
                     </label>
                     <input
                       id="manual-walk-sec"
@@ -722,8 +813,8 @@ export default function ScreeningPage() {
                           e.target.value
                         )
                       }
-                      placeholder="Auto-fills on Complete or enter"
-                      className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                      placeholder="Auto fills on Finish"
+                      className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
                     />
                   </div>
                 )}
@@ -734,7 +825,7 @@ export default function ScreeningPage() {
                       htmlFor="manual-sts-sec"
                       className="block text-xs font-medium text-secondary mb-1"
                     >
-                      Recorded 5x sit-to-stand time (seconds)
+                      {activeTestCopy.timeInputLabel}
                     </label>
                     <input
                       id="manual-sts-sec"
@@ -750,20 +841,20 @@ export default function ScreeningPage() {
                           e.target.value
                         )
                       }
-                      placeholder="Auto-fills on Complete or enter"
-                      className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                      placeholder="Auto fills on Finish"
+                      className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
                     />
                   </div>
                 )}
 
                 {activeTest.id === "knee_bend_extend" && (
                   <>
-                    <div className="w-full sm:w-52">
+                    <div className="w-full sm:w-56">
                       <label
                         htmlFor="manual-flexion-deg"
                         className="block text-xs font-medium text-secondary mb-1"
                       >
-                        Peak knee flexion (degrees)
+                        {activeTestCopy.flexionLabel}
                       </label>
                       <input
                         id="manual-flexion-deg"
@@ -778,16 +869,16 @@ export default function ScreeningPage() {
                             e.target.value
                           )
                         }
-                        placeholder="e.g., 118"
-                        className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
                       />
                     </div>
-                    <div className="w-full sm:w-52">
+                    <div className="w-full sm:w-64">
                       <label
                         htmlFor="manual-ext-deg"
                         className="block text-xs font-medium text-secondary mb-1"
                       >
-                        Extension deficit (degrees)
+                        {activeTestCopy.extensionLabel}
                       </label>
                       <input
                         id="manual-ext-deg"
@@ -805,39 +896,58 @@ export default function ScreeningPage() {
                             e.target.value
                           )
                         }
-                        placeholder="0 = full extension"
-                        className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                        placeholder="0"
+                        className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
                       />
                     </div>
                   </>
                 )}
-
-                <p className="text-xs text-muted">
-                  Clinician-entered measurements are saved directly to the
-                  patient&apos;s screening record; demo telemetry is excluded.
-                </p>
               </div>
 
-              {/* Sensor Visualisations Area (Relevant to Active Test Only) */}
-              <div className="p-5 space-y-5">
-                <SensorVisualisations
-                  test={activeTest}
-                  telemetry={telemetry}
-                  manualValues={testStates[activeTest.id]?.manualValues}
-                />
+              {/* Progressive Disclosure: Doctor View for Live Graphs & Raw Readings */}
+              <div className="px-5 py-3.5">
+                <button
+                  type="button"
+                  aria-expanded={showDoctorView}
+                  onClick={() => setShowDoctorView((prev) => !prev)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-link hover:underline"
+                >
+                  {showDoctorView ? (
+                    <>
+                      <ChevronUp size={16} strokeWidth={1.75} aria-hidden="true" />
+                      <span>{copy.hideDoctorView}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown size={16} strokeWidth={1.75} aria-hidden="true" />
+                      <span>{copy.showDoctorView}</span>
+                    </>
+                  )}
+                </button>
 
-                <InsoleVisualisations
-                  insoleTelemetry={insoleTelemetry}
-                  capabilities={insoleCapabilities}
-                  disabled={!selectedPatient}
-                  onConnect={handleConnectInsole}
-                  onDisconnect={handleDisconnectInsole}
-                  connectError={insoleConnectError}
-                />
+                {showDoctorView && (
+                  <div className="mt-4 space-y-5 pt-4 border-t border-border">
+                    <SensorVisualisations
+                      test={activeTest}
+                      telemetry={telemetry}
+                      manualValues={testStates[activeTest.id]?.manualValues}
+                    />
+
+                    <InsoleVisualisations
+                      insoleTelemetry={insoleTelemetry}
+                      capabilities={insoleCapabilities}
+                      disabled={!selectedPatient}
+                      onConnect={handleConnectInsole}
+                      onDisconnect={handleDisconnectInsole}
+                      connectError={insoleConnectError}
+                    />
+                  </div>
+                )}
               </div>
             </section>
           ) : (
             <ScreeningSummaryStep
+              lang={lang}
               selectedPatient={selectedPatient}
               jointType={jointType}
               side={side}

@@ -11,7 +11,15 @@ import {
   updateScreeningReview,
 } from "../services/screeningService";
 import { SCREENING_TESTS } from "../services/transports/screeningSchema";
+import { SCREENING_COPY } from "../utils/screeningTranslations";
 import { calculateAge, formatClinicalDateTime } from "../utils/formatters";
+
+const OUTCOME_BANNER_TONE = {
+  Normal: "bg-success-bg text-success-text border-success-border",
+  Monitor: "bg-warning-bg text-warning-text border-warning-border",
+  "Elevated Risk": "bg-danger-bg text-danger-text border-danger-border",
+  "Pending Review": "bg-surface-muted text-secondary border-border",
+};
 
 function formatValue(val, unit = "") {
   if (val === null || val === undefined || val === "") return "Not recorded";
@@ -210,7 +218,14 @@ export default function ScreeningResultPage() {
       ? `${screening.flaggedCount ?? 0} of ${screening.evaluatedCount} thresholds flagged`
       : screening.compositeIndex != null
         ? `${screening.compositeIndex} / 100`
-        : "—";
+        : "Not recorded";
+
+  const banner =
+    SCREENING_COPY.en.outcomeBanners[screening.riskLevel] ||
+    SCREENING_COPY.en.outcomeBanners["Pending Review"];
+  const bannerTone =
+    OUTCOME_BANNER_TONE[screening.riskLevel] ||
+    OUTCOME_BANNER_TONE["Pending Review"];
 
   return (
     <div className="space-y-6">
@@ -306,6 +321,12 @@ export default function ScreeningResultPage() {
           {pdfNotice}
         </div>
       )}
+
+      {/* Plain-Language Traffic-Light Action Banner */}
+      <div className={`px-4 py-3 border rounded-sm ${bannerTone}`}>
+        <div className="text-sm font-semibold">{banner.title}</div>
+        <div className="text-sm mt-0.5">{banner.message}</div>
+      </div>
 
       {/* Patient & Clinician Context */}
       <section className="bg-surface border border-border rounded-sm">
