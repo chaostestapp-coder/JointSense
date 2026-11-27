@@ -276,7 +276,7 @@ export default function PatientDetailsPage() {
           aria-labelledby="patient-history-heading"
           className="clinical-table-region"
         >
-          <table className="clinical-table">
+          <table className="clinical-table clinical-table--stacked">
             <thead>
               <tr>
                 <th scope="col">Date</th>
@@ -302,37 +302,37 @@ export default function PatientDetailsPage() {
               ) : (
                 screenings.map((item) => (
                   <tr key={item.id}>
-                    <td className="whitespace-nowrap text-secondary">
+                    <th scope="row" className="whitespace-nowrap text-secondary font-medium text-left">
                       {formatClinicalDateTime(item.createdAt)}
-                    </td>
-                    <td className="whitespace-nowrap">
+                    </th>
+                    <td data-label="Joint" className="whitespace-nowrap">
                       {item.side} {item.jointType}
                     </td>
-                    <td>
+                    <td data-label="Active flexion">
                       {item.flexionDeg != null ? `${item.flexionDeg}°` : "—"}
                     </td>
-                    <td>
+                    <td data-label="Ext. deficit">
                       {item.extensionDeficitDeg != null
                         ? `${item.extensionDeficitDeg}°`
                         : "—"}
                     </td>
-                    <td>
+                    <td data-label="Pain (VAS)">
                       {item.painScore != null ? `${item.painScore}/10` : "—"}
                     </td>
-                    <td className="font-medium">
+                    <td data-label="Flags" className="font-medium">
                       {item.evaluatedCount != null
                         ? `${item.flaggedCount ?? 0}/${item.evaluatedCount}`
                         : item.compositeIndex != null
                           ? `${item.compositeIndex}/100`
                           : "—"}
                     </td>
-                    <td>
+                    <td data-label="Risk level">
                       <StatusBadge status={item.riskLevel} />
                     </td>
-                    <td>
+                    <td data-label="Review status">
                       <StatusBadge status={item.reviewStatus} />
                     </td>
-                    <td className="text-right whitespace-nowrap space-x-3">
+                    <td className="text-right whitespace-nowrap space-x-3 clinical-table-actions">
                       <Link
                         to={`/screenings/${item.id}`}
                         className="text-sm font-medium text-link hover:underline"

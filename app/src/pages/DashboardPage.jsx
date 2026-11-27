@@ -102,16 +102,16 @@ export default function DashboardPage() {
             and patient follow-ups.
           </p>
         </div>
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <Link
             to="/patients"
-            className="link-button px-3.5 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+            className="link-button flex-1 sm:flex-initial text-center px-3.5 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm whitespace-nowrap"
           >
             Manage patients
           </Link>
           <Link
             to="/screening"
-            className="link-button px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
+            className="link-button flex-1 sm:flex-initial text-center px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm whitespace-nowrap"
           >
             New screening
           </Link>
@@ -128,26 +128,26 @@ export default function DashboardPage() {
       )}
 
       {/* Single unified summary bar instead of separate statistic tiles */}
-      <div className="bg-surface border border-border rounded-sm grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border">
-        <div className="px-4 py-3">
+      <div className="bg-border border border-border rounded-sm grid grid-cols-2 md:grid-cols-4 gap-px overflow-hidden">
+        <div className="bg-surface px-4 py-3.5">
           <div className="text-xs text-secondary">Registered patients</div>
           <div className="text-xl font-semibold text-foreground mt-0.5">
             {counts.patients}
           </div>
         </div>
-        <div className="px-4 py-3">
+        <div className="bg-surface px-4 py-3.5">
           <div className="text-xs text-secondary">Total screenings</div>
           <div className="text-xl font-semibold text-foreground mt-0.5">
             {counts.screenings}
           </div>
         </div>
-        <div className="px-4 py-3">
+        <div className="bg-surface px-4 py-3.5">
           <div className="text-xs text-secondary">Pending review</div>
           <div className="text-xl font-semibold text-foreground mt-0.5">
             {counts.pendingReview}
           </div>
         </div>
-        <div className="px-4 py-3">
+        <div className="bg-surface px-4 py-3.5">
           <div className="text-xs text-secondary">Elevated risk findings</div>
           <div className="text-xl font-semibold text-danger-text mt-0.5">
             {counts.elevatedRisk}
@@ -158,18 +158,25 @@ export default function DashboardPage() {
       {/* Primary Worklist Table */}
       <section className="bg-surface border border-border rounded-sm">
         <div className="px-4 py-3 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h2 id="worklist-heading" className="text-base font-semibold text-foreground">
+          <h2 id="worklist-heading" className="text-base font-semibold text-foreground shrink-0">
             Screening queue
           </h2>
-          <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Filter screening queue">
+          <div className="filter-strip no-hover pt-1" role="group" aria-label="Filter screening queue">
             {WORKLIST_FILTERS.map((filter) => {
               const isSelected = activeFilter === filter;
               return (
                 <button
                   key={filter}
                   type="button"
-                  onClick={() => setActiveFilter(filter)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-[3px] border ${
+                  aria-pressed={isSelected}
+                  onClick={(e) => {
+                    setActiveFilter(filter);
+                    e.currentTarget.scrollIntoView({
+                      block: "nearest",
+                      inline: "nearest",
+                    });
+                  }}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-sm border ${
                     isSelected
                       ? "bg-surface-muted text-foreground border-border font-semibold"
                       : "bg-transparent text-secondary hover:text-foreground border-transparent"
@@ -188,7 +195,7 @@ export default function DashboardPage() {
           aria-labelledby="worklist-heading"
           className="clinical-table-region"
         >
-          <table className="clinical-table">
+          <table className="clinical-table clinical-table--stacked">
             <thead>
               <tr>
                 <th scope="col">Date</th>
@@ -216,52 +223,51 @@ export default function DashboardPage() {
                 <tr>
                   <td colSpan={10} className="text-center text-secondary py-8">
                     No screenings match this view.{" "}
-                    <Link to="/screening" className="text-link hover:underline font-medium">
+                    <Link to="/screening" className="block lg:inline text-link hover:underline font-medium">
                       Record a joint screening
                     </Link>
-                    .
                   </td>
                 </tr>
               ) : (
                 filteredScreenings.map((item) => (
                   <tr key={item.id}>
-                    <td className="whitespace-nowrap text-secondary">
+                    <td data-label="Date" className="whitespace-nowrap text-secondary">
                       {formatClinicalDateTime(item.createdAt)}
                     </td>
-                    <td className="font-medium text-foreground">
+                    <th scope="row" className="font-medium text-foreground text-left">
                       <Link
                         to={`/patients/${item.patientId}`}
                         className="hover:underline text-foreground"
                       >
                         {item.patientName}
                       </Link>
-                    </td>
-                    <td className="text-secondary font-mono text-xs">
+                    </th>
+                    <td data-label="MRN" className="text-secondary font-mono text-xs">
                       {item.patientMrn}
                     </td>
-                    <td className="whitespace-nowrap">
+                    <td data-label="Joint" className="whitespace-nowrap">
                       {item.side} {item.jointType}
                     </td>
-                    <td className="whitespace-nowrap">
+                    <td data-label="Flexion" className="whitespace-nowrap">
                       {item.flexionDeg != null ? `${item.flexionDeg}°` : "—"}
                     </td>
-                    <td className="whitespace-nowrap">
+                    <td data-label="Pain" className="whitespace-nowrap">
                       {item.painScore != null ? `${item.painScore}/10` : "—"}
                     </td>
-                    <td className="whitespace-nowrap font-medium">
+                    <td data-label="Flags" className="whitespace-nowrap font-medium">
                       {item.evaluatedCount != null
                         ? `${item.flaggedCount ?? 0}/${item.evaluatedCount}`
                         : item.compositeIndex != null
                           ? `${item.compositeIndex}/100`
                           : "—"}
                     </td>
-                    <td>
+                    <td data-label="Risk level">
                       <StatusBadge status={item.riskLevel} />
                     </td>
-                    <td>
+                    <td data-label="Review status">
                       <StatusBadge status={item.reviewStatus} />
                     </td>
-                    <td className="text-right whitespace-nowrap">
+                    <td className="text-right whitespace-nowrap clinical-table-actions">
                       <Link
                         to={`/screenings/${item.id}`}
                         className="text-sm font-medium text-link hover:underline"
@@ -294,7 +300,7 @@ export default function DashboardPage() {
           aria-labelledby="recent-patients-heading"
           className="clinical-table-region"
         >
-          <table className="clinical-table">
+          <table className="clinical-table clinical-table--stacked">
             <thead>
               <tr>
                 <th scope="col">MRN</th>
@@ -328,25 +334,27 @@ export default function DashboardPage() {
               ) : (
                 recentPatients.map((patient) => (
                   <tr key={patient.id}>
-                    <td className="font-mono text-xs text-secondary">{patient.mrn}</td>
-                    <td className="font-medium text-foreground">
+                    <td data-label="MRN" className="font-mono text-xs text-secondary">
+                      {patient.mrn}
+                    </td>
+                    <th scope="row" className="font-medium text-foreground text-left">
                       <Link to={`/patients/${patient.id}`} className="hover:underline">
                         {patient.fullName}
                       </Link>
-                    </td>
-                    <td>
+                    </th>
+                    <td data-label="Primary joint">
                       {patient.affectedSide} {patient.primaryJoint}
                     </td>
-                    <td className="text-secondary">
+                    <td data-label="Last screening" className="text-secondary">
                       {formatClinicalDate(patient.lastScreeningAt)}
                     </td>
-                    <td>
+                    <td data-label="Last risk">
                       <StatusBadge status={patient.lastRiskLevel} />
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <StatusBadge status={patient.status} />
                     </td>
-                    <td className="text-right whitespace-nowrap space-x-3">
+                    <td className="text-right whitespace-nowrap space-x-3 clinical-table-actions">
                       <Link
                         to={`/patients/${patient.id}`}
                         className="text-sm text-secondary hover:text-foreground hover:underline"

@@ -168,7 +168,7 @@ export default function PatientsPage() {
           aria-labelledby="patient-registry-heading"
           className="clinical-table-region"
         >
-          <table className="clinical-table">
+          <table className="clinical-table clinical-table--stacked">
             <thead>
               <tr>
                 <th scope="col">MRN</th>
@@ -204,36 +204,36 @@ export default function PatientsPage() {
                   const age = calculateAge(patient.dateOfBirth);
                   return (
                     <tr key={patient.id}>
-                      <td className="font-mono text-xs text-secondary whitespace-nowrap">
+                      <td data-label="MRN" className="font-mono text-xs text-secondary whitespace-nowrap">
                         {patient.mrn}
                       </td>
-                      <td className="font-medium text-foreground whitespace-nowrap">
+                      <th scope="row" className="font-medium text-foreground text-left whitespace-nowrap">
                         <Link
                           to={`/patients/${patient.id}`}
                           className="hover:underline"
                         >
                           {patient.fullName}
                         </Link>
-                      </td>
-                      <td className="text-secondary whitespace-nowrap">
+                      </th>
+                      <td data-label="Age / Sex" className="text-secondary whitespace-nowrap">
                         {age !== null ? `${age}y` : "—"} / {patient.sex}
                       </td>
-                      <td className="text-secondary whitespace-nowrap">
+                      <td data-label="Phone" className="text-secondary whitespace-nowrap">
                         {patient.phone}
                       </td>
-                      <td className="whitespace-nowrap">
+                      <td data-label="Primary joint" className="whitespace-nowrap">
                         {patient.affectedSide} {patient.primaryJoint}
                       </td>
-                      <td className="text-secondary whitespace-nowrap">
+                      <td data-label="Last screening" className="text-secondary whitespace-nowrap">
                         {formatClinicalDate(patient.lastScreeningAt)}
                       </td>
-                      <td>
+                      <td data-label="Last risk">
                         <StatusBadge status={patient.lastRiskLevel} />
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <StatusBadge status={patient.status} />
                       </td>
-                      <td className="text-right whitespace-nowrap space-x-3">
+                      <td className="text-right whitespace-nowrap space-x-3 clinical-table-actions">
                         <Link
                           to={`/patients/${patient.id}`}
                           className="text-sm text-secondary hover:text-foreground hover:underline"

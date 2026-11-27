@@ -189,20 +189,20 @@ export default function AppShell() {
 
       {/* Main Column */}
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 bg-surface border-b border-border px-4 sm:px-6 flex items-center justify-between gap-4 no-print lg:hidden">
-          <div className="w-full flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open navigation menu"
-              className="lg:hidden p-1.5 text-secondary hover:text-foreground hover:bg-surface-muted rounded-sm"
-            >
-              <Menu size={18} strokeWidth={1.75} />
-            </button>
-            <span className="text-base text-center w-full block">JointSense</span>
-          </div>
+        <header className="h-14 bg-surface border-b border-border px-4 sm:px-6 grid grid-cols-[2.75rem_1fr_minmax(2.75rem,auto)] items-center gap-2 no-print lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open navigation menu"
+            className="inline-flex items-center justify-center min-w-10 min-h-10 text-secondary hover:text-foreground hover:bg-surface-muted rounded-sm"
+          >
+            <Menu size={18} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <span className="text-base font-semibold tracking-tight text-center truncate">
+            JointSense
+          </span>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center justify-end gap-2 shrink-0">
             {!isOnline && (
               <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-warning-bg text-warning-text border border-warning-border rounded-sm">
                 <WifiOff size={13} strokeWidth={1.75} aria-hidden="true" />

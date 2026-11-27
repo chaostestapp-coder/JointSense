@@ -132,18 +132,43 @@
   --color-info-strong: var(--info-strong);
 }
 
+:root {
+  --target-size: 24px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+}
+
 html,
 body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: Calibri, Arial, "Helvetica Neue", sans-serif;
   line-height: 1.5;
+  overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
 }
 
 button,
 .link-button {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
   cursor: pointer;
 }
 
@@ -204,6 +229,77 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
   display: block;
 }
 
+/* Single-row horizontally scrollable filter strip with scroll-driven edge fades */
+@property --fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.filter-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.375rem;
+  overflow-x: auto;
+  max-inline-size: 100%;
+  scrollbar-width: none;
+  scroll-snap-type: inline proximity;
+  scroll-padding-inline: 2rem;
+  --fade-size: 2rem;
+  --fade-dir: right;
+  --fade-start-pos: 0;
+  --fade-end-pos: 100%;
+  mask:
+    linear-gradient(black, black) no-clip subtract,
+    linear-gradient(to var(--fade-dir), black, transparent)
+      var(--fade-start-pos) 0 / var(--fade-start) 100% no-repeat no-clip,
+    linear-gradient(to var(--fade-dir), transparent, black) var(--fade-end-pos)
+      0 / var(--fade-end) 100% no-repeat no-clip;
+  animation:
+    js-reveal-fade-start linear both,
+    js-hide-fade-end linear both;
+  animation-timeline: scroll(self inline);
+  animation-range:
+    0 var(--fade-size),
+    calc(100% - var(--fade-size)) 100%;
+}
+
+.filter-strip:dir(rtl) {
+  --fade-dir: left;
+  --fade-start-pos: 100%;
+  --fade-end-pos: 0;
+}
+
+.filter-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-strip > button {
+  flex: none;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  min-block-size: var(--target-size);
+}
+
+@keyframes js-reveal-fade-start {
+  to {
+    --fade-start: var(--fade-size);
+  }
+}
+
+@keyframes js-hide-fade-end {
+  from {
+    --fade-end: var(--fade-size);
+  }
+}
+
 /* Clinical data table container & sticky headers */
 .clinical-table-region {
   overflow-x: auto;
@@ -245,6 +341,85 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
 
 .clinical-table tbody tr:hover {
   background-color: var(--surface-muted);
+}
+
+@container (width < 600px) {
+  .clinical-table--stacked,
+  .clinical-table--stacked thead,
+  .clinical-table--stacked tbody,
+  .clinical-table--stacked tr,
+  .clinical-table--stacked th,
+  .clinical-table--stacked td {
+    display: block;
+  }
+
+  .clinical-table--stacked thead {
+    display: none;
+  }
+
+  .clinical-table--stacked tbody tr:not(:has(td[colspan])) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .clinical-table--stacked tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .clinical-table--stacked tbody tr:hover {
+    background-color: transparent;
+  }
+
+  .clinical-table--stacked tbody th {
+    order: -1;
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background-color: var(--surface-muted);
+    margin: -0.875rem -1rem 0.375rem;
+    padding: 0.625rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.9375rem;
+  }
+
+  .clinical-table--stacked tbody td:not([colspan]) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0;
+    border-bottom: none;
+    text-align: right;
+    white-space: normal;
+  }
+
+  .clinical-table--stacked tbody td[data-label]::before {
+    content: attr(data-label);
+    color: var(--secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .clinical-table--stacked tbody td.clinical-table-actions {
+    margin-top: 0.25rem;
+    padding-top: 0.625rem;
+    border-top: 1px solid var(--border);
+    justify-content: flex-end;
+    gap: 1rem;
+  }
+
+  .clinical-table--stacked tbody td[colspan] {
+    padding: 2rem 1rem;
+    text-align: center;
+    border-bottom: none;
+    white-space: normal;
+  }
 }
 
 .visually-hidden:where(:not(:focus-within, :active)) {
@@ -341,4 +516,30 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
   .demo-playing .anim-knee-shin {
     animation: js-knee-shin 3.2s ease-in-out infinite;
   }
+}
+
+button,
+a {
+  transition: all 0.2s ease-in-out !important;
+  cursor: pointer;
+  outline: none;
+}
+
+button:hover,
+a:hover {
+  transform: translateY(-2px);
+}
+
+button:active,
+a:active {
+  transform: translateY(0) scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.no-hover {
+  transition: none !important;
 }
