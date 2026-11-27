@@ -8,7 +8,10 @@ import {
 import { createFirebaseInsoleTransport } from "../src/services/transports/firebaseInsoleTransport.js";
 import { createFirebaseRtdbTransport } from "../src/services/transports/firebaseRtdbTransport.js";
 import { CONNECTION_STATUS } from "../src/services/transports/screeningSchema.js";
-import { extractScreeningFeatures } from "../src/services/ml/screeningFeatureExtractor.js";
+import {
+  extractScreeningFeatures,
+  runOaRiskInference,
+} from "../src/services/ml/screeningFeatureExtractor.js";
 
 test("Pending hardware specs when insole RTDB path or mapper is missing (no subscription)", async () => {
   let subscribeCalls = 0;
@@ -223,18 +226,44 @@ test("Simultaneous knee sleeve and smart insole listeners operate independently"
   assert.equal(kneeUnsubs, 1);
 });
 
-test("ML feature extractor preserves null for missing values and marks mlModelIntegrated false", () => {
+test("ML feature extractor & OA risk inference compute probability and preserve null availability", () => {
   const features = extractScreeningFeatures({
     clinical: { walkSpeedMps: 1.1, painScore: 3 },
     kneeSleeveSnapshot: { processed: { kneeAngleDeg: 19.2, steps: 0 } },
     smartInsoleSnapshot: null,
   });
 
-  assert.equal(features.mlModelIntegrated, false);
+  assert.equal(features.mlModelIntegrated, true);
   assert.equal(features.availability.hasClinical, true);
   assert.equal(features.availability.hasKneeSleeve, true);
   assert.equal(features.availability.hasSmartInsole, false);
   assert.equal(features.kneeSleeve.steps, 0);
   assert.equal(features.smartInsole.shoeAngleDeg, null);
   assert.equal(features.smartInsole.footContact, null);
+
+  const oa = runOaRiskInference({
+    clinical: { walkSpeedMps: 0.72 },
+    kneeSleeveSnapshot: {
+      processed: {
+        walkingSpeedMs: 0.72,
+        vibration: { rms: 0.42, spikes: 6 },
+      },
+    },
+    smartInsoleSnapshot: {
+      processed: {
+        fsr: { heel: 300, inner: 100, outer: 240, toe: 120 },
+      },
+    },
+    kneeHistory: [
+      { kneeAngleDeg: 10, vibrationRms: 0.4, vibrationSpikes: 5 },
+      { kneeAngleDeg: 38, vibrationRms: 0.44, vibrationSpikes: 7 },
+    ],
+    insoleHistory: [{ shoeAngleDeg: 4 }, { shoeAngleDeg: 16 }],
+  });
+
+  assert.equal(oa.mlModelIntegrated, true);
+  assert.equal(oa.totalFeatures, 7);
+  assert.equal(oa.measuredFeaturesCount, 7);
+  assert.ok(oa.probability > 0 && oa.probability <= 1);
+  assert.equal(oa.riskBand, "High OA Risk");
 });

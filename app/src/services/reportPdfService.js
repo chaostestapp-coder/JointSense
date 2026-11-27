@@ -124,6 +124,38 @@ export function generateScreeningReportPdf({
     ],
   });
 
+  // OA Risk Model Summary (when present)
+  if (screening.mlAssessment) {
+    const ml = screening.mlAssessment;
+    const topFactors = (ml.explanations || [])
+      .filter((f) => !f.usedFallback)
+      .slice(0, 4)
+      .map(
+        (f) =>
+          `${f.label}: ${Number(f.raw).toFixed(2)} (${
+            f.increasesRisk ? "increases risk" : "reduces risk"
+          })`
+      )
+      .join("\n");
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 6,
+      margin: { left: margin, right: margin },
+      theme: "grid",
+      styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [20, 28, 30] },
+      headStyles: { fillColor: [15, 94, 89], textColor: [255, 255, 255] },
+      head: [["OA Risk Model Assessment", "Result"]],
+      body: [
+        ["Predicted OA Risk", `${ml.riskBand} (${ml.probabilityPct}%)`],
+        [
+          "Live Features Used",
+          `${ml.measuredFeaturesCount ?? 0} of ${ml.totalFeatures ?? 7}`,
+        ],
+        ...(topFactors ? [["Key Contributing Factors", topFactors]] : []),
+      ],
+    });
+  }
+
   // 3-Test Guided Protocol Results
   const testRows = SCREENING_TESTS.map((test) => {
     const entry = screening.guidedTests?.[test.id];

@@ -112,11 +112,15 @@ export async function getOrCreateScreeningReportPdf({
     existing?.status === "available" &&
     existing?.storagePath
   ) {
-    await downloadStoredReportPdf(
-      existing.storagePath,
-      existing.fileName || buildReportFileName(screening)
-    );
-    return { mode: "downloaded_existing", storagePath: existing.storagePath };
+    try {
+      await downloadStoredReportPdf(
+        existing.storagePath,
+        existing.fileName || buildReportFileName(screening)
+      );
+      return { mode: "downloaded_existing", storagePath: existing.storagePath };
+    } catch {
+      // Fall back to local regeneration if cloud storage download fails (e.g. CORS)
+    }
   }
 
   const { blob, fileName } = generateScreeningReportPdf({
@@ -125,7 +129,18 @@ export async function getOrCreateScreeningReportPdf({
     doctor,
   });
 
-  const metadata = await uploadScreeningReportPdf(screening, blob, fileName);
   triggerPdfDownload(blob, fileName);
-  return { mode: "generated_and_uploaded", storagePath: metadata.storagePath };
+
+  try {
+    const metadata = await uploadScreeningReportPdf(screening, blob, fileName);
+    return {
+      mode: "generated_and_uploaded",
+      storagePath: metadata.storagePath,
+    };
+  } catch (err) {
+    return {
+      mode: "downloaded_local",
+      uploadWarning: err?.message || "Cloud upload unavailable.",
+    };
+  }
 }

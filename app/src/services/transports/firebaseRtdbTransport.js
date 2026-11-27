@@ -133,6 +133,7 @@ export function createFirebaseRtdbTransport(options = {}) {
       kneeAngleDeg: parsed.processed.kneeAngleDeg,
       walkingSpeedMs: parsed.processed.walkingSpeedMs,
       vibrationRms: parsed.processed.vibration.rms,
+      vibrationSpikes: parsed.processed.vibration.spikes,
     };
     historyBuffer = [...historyBuffer, sample].slice(-MAX_HISTORY_SAMPLES);
 

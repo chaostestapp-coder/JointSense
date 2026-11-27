@@ -11,7 +11,10 @@ import {
 } from "firebase/firestore";
 import api from "../config/api";
 import { db, isFirebaseConfigured } from "../config/firebase";
-import { extractScreeningFeatures } from "./ml/screeningFeatureExtractor";
+import {
+  extractScreeningFeatures,
+  runOaRiskInference,
+} from "./ml/screeningFeatureExtractor";
 import {
   generateClientMutationId,
   getPendingScreenings,
@@ -411,6 +414,13 @@ export async function createScreening(doctorId, screeningData) {
     kneeSleeveSnapshot: sensorsSummary.kneeSleeve.latestSnapshot,
     smartInsoleSnapshot: sensorsSummary.smartInsole.latestSnapshot,
   });
+  const mlAssessment = runOaRiskInference({
+    clinical: screeningData,
+    kneeSleeveSnapshot: sensorsSummary.kneeSleeve.latestSnapshot,
+    smartInsoleSnapshot: sensorsSummary.smartInsole.latestSnapshot,
+    kneeHistory: screeningData.kneeHistory || [],
+    insoleHistory: screeningData.insoleHistory || [],
+  });
 
   const payload = {
     clientMutationId,
@@ -444,9 +454,10 @@ export async function createScreening(doctorId, screeningData) {
     referenceFlexion:
       assessment.referenceFlexion ?? baselineAssessment.referenceFlexion,
     recommendation: assessment.summaryRecommendation,
-    analysisSource: assessment.source || "Threshold Screening Rubric (v1 — Pre-ML)",
-    mlModelIntegrated: false,
-    mlAssessment: null,
+    analysisSource:
+      assessment.source || "Threshold Screening Rubric + OA Risk Model",
+    mlModelIntegrated: mlAssessment.mlModelIntegrated,
+    mlAssessment,
     reviewStatus: "Pending Review",
     clinicianNotes: "",
     followUpPlan: "",

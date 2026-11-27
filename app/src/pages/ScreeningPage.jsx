@@ -10,7 +10,6 @@ import {
   VolumeX,
 } from "lucide-react";
 import DeviceStatusBar from "../components/screening/DeviceStatusBar";
-import InsoleVisualisations from "../components/screening/InsoleVisualisations";
 import MovementIllustration from "../components/screening/MovementIllustration";
 import ScreeningSummaryStep from "../components/screening/ScreeningSummaryStep";
 import SensorVisualisations from "../components/screening/SensorVisualisations";
@@ -135,6 +134,8 @@ export default function ScreeningPage() {
     createEmptyInsoleTelemetry()
   );
   const [insoleConnectError, setInsoleConnectError] = useState("");
+  const [sessionKneeSamples, setSessionKneeSamples] = useState([]);
+  const [sessionInsoleSamples, setSessionInsoleSamples] = useState([]);
 
   // Stopwatch state for the active test
   const [timerRunning, setTimerRunning] = useState(false);
@@ -169,6 +170,24 @@ export default function ScreeningPage() {
   useEffect(() => {
     const unsubscribe = adapter.subscribe((snapshot) => {
       setTelemetry(snapshot);
+      if (
+        snapshot?.isLive &&
+        snapshot?.timing?.receivedAtMs &&
+        activeStepIndexRef.current < SCREENING_TESTS.length
+      ) {
+        setSessionKneeSamples((prevSamples) =>
+          [
+            ...prevSamples,
+            {
+              receivedAtMs: snapshot.timing.receivedAtMs,
+              kneeAngleDeg: snapshot.processed?.kneeAngleDeg ?? null,
+              vibrationRms: snapshot.processed?.vibration?.rms ?? null,
+              vibrationSpikes: snapshot.processed?.vibration?.spikes ?? null,
+            },
+          ].slice(-300)
+        );
+      }
+
       if (snapshot?.testId) {
         setTestStates((prev) => {
           const existing = prev[snapshot.testId];
@@ -211,6 +230,22 @@ export default function ScreeningPage() {
   useEffect(() => {
     const unsubscribe = insoleAdapter.subscribe((snapshot) => {
       setInsoleTelemetry(snapshot);
+      if (
+        snapshot?.isLive &&
+        snapshot?.timing?.receivedAtMs &&
+        activeStepIndexRef.current < SCREENING_TESTS.length
+      ) {
+        setSessionInsoleSamples((prevSamples) =>
+          [
+            ...prevSamples,
+            {
+              receivedAtMs: snapshot.timing.receivedAtMs,
+              shoeAngleDeg: snapshot.processed?.shoeAngleDeg ?? null,
+            },
+          ].slice(-300)
+        );
+      }
+
       const currentTest = SCREENING_TESTS[activeStepIndexRef.current];
       if (!currentTest) return;
 
@@ -504,8 +539,25 @@ export default function ScreeningPage() {
       extensionDeficitDeg,
       ...symptomForm,
       guidedTests: testStates,
+      kneeHistory:
+        sessionKneeSamples.length >= 2
+          ? sessionKneeSamples
+          : telemetry?.historyBuffer || [],
+      insoleHistory:
+        sessionInsoleSamples.length >= 2
+          ? sessionInsoleSamples
+          : insoleTelemetry?.historyBuffer || [],
     };
-  }, [jointType, side, symptomForm, testStates]);
+  }, [
+    jointType,
+    side,
+    symptomForm,
+    testStates,
+    sessionKneeSamples,
+    sessionInsoleSamples,
+    telemetry?.historyBuffer,
+    insoleTelemetry?.historyBuffer,
+  ]);
 
   const thresholdEvaluation = useMemo(
     () => evaluateClinicalScreening(compiledScreeningData),
@@ -980,16 +1032,11 @@ export default function ScreeningPage() {
                 </button>
 
                 {showDoctorView && (
-                  <div className="mt-4 space-y-5 pt-4 border-t border-border">
+                  <div className="mt-4 pt-4 border-t border-border">
                     <SensorVisualisations
                       test={activeTest}
                       telemetry={telemetry}
-                      manualValues={testStates[activeTest.id]?.manualValues}
-                    />
-
-                    <InsoleVisualisations
                       insoleTelemetry={insoleTelemetry}
-                      capabilities={insoleCapabilities}
                     />
                   </div>
                 )}

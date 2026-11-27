@@ -143,8 +143,10 @@ export default function ScreeningResultPage() {
       });
       setPdfNotice(
         result.mode === "downloaded_existing"
-          ? "Downloaded stored PDF report from Firebase Storage."
-          : "Generated PDF report, uploaded to Firebase Storage, and started download."
+          ? "Downloaded stored PDF report."
+          : result.mode === "generated_and_uploaded"
+            ? "Generated PDF report, saved to cloud storage, and started download."
+            : "Generated and downloaded PDF report locally."
       );
     } catch (err) {
       setPdfError(err.message || "Unable to generate or download PDF report.");
@@ -432,12 +434,46 @@ export default function ScreeningResultPage() {
               </strong>
             </div>
             <div>
-              <span className="text-secondary">ML model: </span>
+              <span className="text-secondary">OA Risk Model: </span>
               <strong className="text-foreground">
-                {screening.mlModelIntegrated ? "Integrated" : "Not integrated"}
+                {screening.mlAssessment
+                  ? `${screening.mlAssessment.riskBand} (${screening.mlAssessment.probabilityPct}%)`
+                  : "Not available"}
               </strong>
             </div>
           </div>
+
+          {screening.mlAssessment && (
+            <div className="pt-2 border-t border-border space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-foreground">
+                  OA risk prediction (Logistic Regression ·{" "}
+                  {screening.mlAssessment.measuredFeaturesCount}/
+                  {screening.mlAssessment.totalFeatures} live features)
+                </span>
+                <span className="font-mono font-semibold text-foreground">
+                  {screening.mlAssessment.probabilityPct}% probability
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {(screening.mlAssessment.explanations || [])
+                  .filter((f) => !f.usedFallback)
+                  .slice(0, 4)
+                  .map((f) => (
+                    <span
+                      key={f.name}
+                      className="px-2 py-0.5 bg-surface-muted border border-border rounded-xs text-secondary"
+                    >
+                      {f.label}:{" "}
+                      <strong className="text-foreground">
+                        {Number(f.raw).toFixed(2)}
+                      </strong>{" "}
+                      ({f.increasesRisk ? "↑ risk" : "↓ risk"})
+                    </span>
+                  ))}
+              </div>
+            </div>
+          )}
           <p className="text-xs text-muted">
             JointSense provides threshold-based screening assistance and does
             not establish a confirmed clinical diagnosis.

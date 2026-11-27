@@ -51,6 +51,8 @@ if (isFirebaseConfigured) {
   }
   if (firebaseConfig.storageBucket) {
     storage = getStorage(firebaseApp);
+    storage.maxUploadRetryTime = 5000;
+    storage.maxOperationRetryTime = 5000;
   }
 }
 

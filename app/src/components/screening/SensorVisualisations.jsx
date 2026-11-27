@@ -1,15 +1,16 @@
 import { CONNECTION_STATUS } from "../../services/transports/screeningSchema";
+import { INSOLE_CONNECTION_STATUS } from "../../services/transports/insoleSchema";
 
-function formatValue(value, unit = "", decimals = null) {
+function formatMetric(value, unit = "", decimals = null) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return "Unavailable";
+    return "—";
   }
   const num = Number(value);
   const formatted = decimals !== null ? num.toFixed(decimals) : String(num);
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
-function formatBrowserReceiptTime(receivedAtMs) {
+function formatReceiptTime(receivedAtMs) {
   if (!receivedAtMs) return "—";
   return new Date(receivedAtMs).toLocaleTimeString([], {
     hour: "2-digit",
@@ -18,85 +19,106 @@ function formatBrowserReceiptTime(receivedAtMs) {
   });
 }
 
-function LiveKneeTrendChart({ historyBuffer, isStale, isDemoData }) {
-  const validSamples = (historyBuffer || []).filter(
+function CombinedMovementChart({
+  kneeHistory,
+  insoleHistory,
+  isKneeStale,
+  isInsoleStale,
+}) {
+  const kneePts = (kneeHistory || []).filter(
     (s) => s.kneeAngleDeg !== null && s.kneeAngleDeg !== undefined
   );
+  const shoePts = (insoleHistory || []).filter(
+    (s) => s.shoeAngleDeg !== null && s.shoeAngleDeg !== undefined
+  );
 
-  if (validSamples.length < 2) {
+  const hasKnee = kneePts.length >= 2;
+  const hasShoe = shoePts.length >= 2;
+
+  if (!hasKnee && !hasShoe) {
     return (
-      <div className="border border-border rounded-sm bg-surface p-3.5 space-y-2">
+      <div className="border border-border rounded-sm bg-surface p-4 space-y-2">
         <div className="text-sm font-semibold text-foreground">
-          Knee angle live trend (In-session buffer)
+          Joint & shoe angle trend
         </div>
-        <div className="h-28 flex items-center justify-center border border-dashed border-border rounded-sm bg-surface-muted/30 px-4 text-center">
+        <div className="h-32 flex items-center justify-center border border-dashed border-border rounded-sm bg-surface-muted/30 px-4 text-center">
           <span className="text-xs text-muted">
-            {validSamples.length === 1
-              ? "1 snapshot received. Waiting for additional Firebase updates to plot trend."
-              : "Waiting for live Firebase snapshots to build in-session trend."}
+            Waiting for live knee sleeve or smart insole updates to plot
+            combined movement trend.
           </span>
         </div>
       </div>
     );
   }
 
-  const width = 480;
-  const height = 140;
-  const padLeft = 32;
-  const padRight = 12;
-  const padTop = 12;
-  const padBottom = 22;
+  const width = 560;
+  const height = 165;
+  const padLeft = 36;
+  const padRight = 14;
+  const padTop = 14;
+  const padBottom = 24;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
-  const yMinRaw = Math.min(0, ...validSamples.map((s) => Number(s.kneeAngleDeg)));
-  const yMin = yMinRaw < 0 ? Math.floor(yMinRaw / 10) * 10 : 0;
-  const yMaxRaw = Math.max(150, ...validSamples.map((s) => Number(s.kneeAngleDeg)));
-  const yMax = Math.ceil(yMaxRaw / 10) * 10;
+
+  const allAngles = [
+    ...kneePts.map((s) => Number(s.kneeAngleDeg)),
+    ...shoePts.map((s) => Number(s.shoeAngleDeg)),
+  ];
+  const yMin = Math.floor(Math.min(0, ...allAngles) / 10) * 10;
+  const yMax = Math.ceil(Math.max(90, ...allAngles) / 10) * 10;
   const ySpan = yMax - yMin || 1;
 
-  const minT = validSamples[0].receivedAtMs;
-  const maxT = validSamples[validSamples.length - 1].receivedAtMs;
+  const allTimes = [
+    ...kneePts.map((s) => s.receivedAtMs),
+    ...shoePts.map((s) => s.receivedAtMs),
+  ];
+  const minT = Math.min(...allTimes);
+  const maxT = Math.max(...allTimes);
   const spanT = maxT - minT || 1;
 
-  const pathD = validSamples
-    .map((pt, idx) => {
-      const x = padLeft + ((pt.receivedAtMs - minT) / spanT) * innerW;
-      const clampedDeg = Math.max(yMin, Math.min(yMax, Number(pt.kneeAngleDeg)));
-      const y = padTop + (1 - (clampedDeg - yMin) / ySpan) * innerH;
-      return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
+  const buildPath = (pts, key) =>
+    pts
+      .map((pt, idx) => {
+        const x = padLeft + ((pt.receivedAtMs - minT) / spanT) * innerW;
+        const val = Math.max(yMin, Math.min(yMax, Number(pt[key])));
+        const y = padTop + (1 - (val - yMin) / ySpan) * innerH;
+        return `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      })
+      .join(" ");
 
   return (
-    <div
-      className={`border border-border rounded-sm bg-surface p-3.5 space-y-2 ${
-        isStale ? "opacity-65" : ""
-      }`}
-    >
+    <div className="border border-border rounded-sm bg-surface p-4 space-y-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-semibold text-foreground">
-          Knee angle live trend (In-session buffer · {validSamples.length}{" "}
-          samples)
+          Combined knee & shoe angle trend
         </div>
-        <div className="flex items-center gap-2">
-          {isDemoData && (
-            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
-              Demo
+        <div className="flex flex-wrap items-center gap-4 text-xs text-secondary">
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block w-3.5 h-0.5 bg-accent"
+              aria-hidden="true"
+            />
+            <span>
+              Knee angle{isKneeStale ? " (stale)" : ""}
             </span>
-          )}
-          {isStale && (
-            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
-              Stale
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className="inline-block w-3.5 h-0.5 border-t-2 border-dashed border-info-strong"
+              aria-hidden="true"
+            />
+            <span>
+              Shoe angle{isInsoleStale ? " (stale)" : ""}
             </span>
-          )}
+          </span>
         </div>
       </div>
 
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full h-36"
+        className="w-full h-40"
         role="img"
-        aria-label="In-session knee angle trend from received Firebase snapshots"
+        aria-label="Combined knee angle and shoe angle trend over time"
       >
         {[0, 0.5, 1].map((frac) => {
           const y = padTop + frac * innerH;
@@ -112,246 +134,177 @@ function LiveKneeTrendChart({ historyBuffer, isStale, isDemoData }) {
                 strokeWidth="1"
               />
               <text
-                x={padLeft - 4}
+                x={padLeft - 6}
                 y={y + 3}
                 textAnchor="end"
                 fill="var(--muted)"
-                fontSize="9"
+                fontSize="10"
               >
                 {val}°
               </text>
             </g>
           );
         })}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        <text x={padLeft} y={height - 5} fill="var(--muted)" fontSize="9">
-          {formatBrowserReceiptTime(minT)}
+
+        {hasKnee && (
+          <path
+            d={buildPath(kneePts, "kneeAngleDeg")}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={isKneeStale ? 0.45 : 1}
+          />
+        )}
+
+        {hasShoe && (
+          <path
+            d={buildPath(shoePts, "shoeAngleDeg")}
+            fill="none"
+            stroke="var(--info-strong)"
+            strokeWidth="2"
+            strokeDasharray="5 3"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={isInsoleStale ? 0.45 : 1}
+          />
+        )}
+
+        <text x={padLeft} y={height - 5} fill="var(--muted)" fontSize="10">
+          {formatReceiptTime(minT)}
         </text>
         <text
           x={width - padRight}
           y={height - 5}
           textAnchor="end"
           fill="var(--muted)"
-          fontSize="9"
+          fontSize="10"
         >
-          {formatBrowserReceiptTime(maxT)}
+          {formatReceiptTime(maxT)}
         </text>
       </svg>
-
-      <p className="text-xs text-muted">
-        Temporary in-browser buffer of actual received Firebase payloads;
-        distinct from saved screening history.
-      </p>
     </div>
   );
 }
 
-export default function SensorVisualisations({ test, telemetry }) {
-  const status = telemetry?.connectionStatus || CONNECTION_STATUS.NOT_CONNECTED;
-  const isStale = Boolean(telemetry?.isStale);
-  const isDemoData = Boolean(telemetry?.isDemoData);
-  const hasPayload = Boolean(telemetry?.timing?.receivedAtMs);
+export default function SensorVisualisations({
+  test,
+  telemetry,
+  insoleTelemetry,
+}) {
+  const kp = telemetry?.processed || {};
+  const ip = insoleTelemetry?.processed || {};
+  const isKneeStale = Boolean(telemetry?.isStale);
+  const isInsoleStale = Boolean(insoleTelemetry?.isStale);
 
-  const processed = telemetry?.processed || {};
-  const vibration = processed.vibration || {};
-  const rawImu = telemetry?.rawImu || {};
-  const acc = rawImu.acc || {};
-  const gyro = rawImu.gyro || {};
-  const timing = telemetry?.timing || {};
+  const kneeOffline =
+    !telemetry?.timing?.receivedAtMs &&
+    telemetry?.connectionStatus !== CONNECTION_STATUS.RECEIVING;
+  const insoleOffline =
+    !insoleTelemetry?.timing?.receivedAtMs &&
+    insoleTelemetry?.connectionStatus !== INSOLE_CONNECTION_STATUS.RECEIVING;
 
-  const showWaitingBanner = !hasPayload;
+  const footContactLabel =
+    ip.footContact === true
+      ? "In contact"
+      : ip.footContact === false
+        ? "No contact"
+        : "—";
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">
-          Live ESP32 sensor readings ({test.shortName})
+          Combined sensor overview ({test.shortName})
         </h3>
-        <div className="flex items-center gap-3 text-xs text-secondary">
-          <span>
-            ESP32 timestamp:{" "}
-            <strong className="font-mono text-foreground">
-              {timing.esp32Timestamp !== null &&
-              timing.esp32Timestamp !== undefined
-                ? String(timing.esp32Timestamp)
-                : "—"}
-            </strong>
-          </span>
-          <span>
-            Last received (browser):{" "}
-            <strong className="font-mono text-foreground">
-              {formatBrowserReceiptTime(timing.receivedAtMs)}
-            </strong>
-          </span>
-        </div>
+        <span className="text-xs text-muted">
+          Last update:{" "}
+          <strong className="font-mono text-foreground">
+            {formatReceiptTime(
+              Math.max(
+                telemetry?.timing?.receivedAtMs || 0,
+                insoleTelemetry?.timing?.receivedAtMs || 0
+              ) || null
+            )}
+          </strong>
+        </span>
       </div>
 
-      {isStale && (
+      {(kneeOffline || insoleOffline) && (
+        <p className="text-xs text-secondary">
+          {kneeOffline && insoleOffline
+            ? "Start the sensor listener above to stream live knee sleeve and smart insole data."
+            : kneeOffline
+              ? "Knee sleeve data not yet received; showing available smart insole readings."
+              : "Smart insole data not yet received; showing available knee sleeve readings."}
+        </p>
+      )}
+
+      {/* Single-column combined summary metrics */}
+      <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 text-xs">
         <div
-          role="alert"
-          className="px-3.5 py-2.5 text-xs bg-warning-bg text-warning-text border border-warning-border rounded-sm"
+          className={`p-3 bg-surface-muted/40 border border-border rounded-sm ${
+            isKneeStale ? "opacity-65" : ""
+          }`}
         >
-          <strong>Data stale:</strong> No fresh ESP32 payload arrived within the
-          freshness window. Previous values are dimmed and are no longer treated
-          as live.
+          <dt className="text-secondary">Knee angle</dt>
+          <dd className="text-base font-semibold text-foreground mt-0.5">
+            {formatMetric(kp.kneeAngleDeg, "°", 1)}
+          </dd>
         </div>
-      )}
 
-      {showWaitingBanner && (
-        <div className="px-3.5 py-3 text-xs bg-surface-muted/40 text-secondary border border-dashed border-border rounded-sm">
-          {status === CONNECTION_STATUS.WAITING_FOR_ESP32
-            ? "Firebase listener is active, waiting for ESP32 to publish a payload to the database path."
-            : status === CONNECTION_STATUS.PERMISSION_DENIED
-              ? "Firebase permission denied. Update Realtime Database rules to read this path."
-              : status === CONNECTION_STATUS.CONFIG_MISSING
-                ? "Firebase Realtime Database configuration is missing in app/.env."
-                : "No live sensor payload received yet. Start the sensor listener when the ESP32 is publishing."}
+        <div
+          className={`p-3 bg-surface-muted/40 border border-border rounded-sm ${
+            isKneeStale ? "opacity-65" : ""
+          }`}
+        >
+          <dt className="text-secondary">Speed / Steps</dt>
+          <dd className="text-base font-semibold text-foreground mt-0.5">
+            {formatMetric(kp.walkingSpeedMs, "m/s", 2)} ·{" "}
+            {formatMetric(kp.steps, "", 0)}
+          </dd>
         </div>
-      )}
 
-      {/* Processed Measurements vs Raw IMU Readings */}
-      <div
-        className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${
-          isStale ? "opacity-65" : ""
-        }`}
-      >
-        {/* Processed: Knee Movement */}
-        <section className="border border-border rounded-sm bg-surface p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">
-              Knee movement (Processed)
-            </h4>
-            <span className="text-[11px] text-muted">
-              {isStale ? "Stale" : hasPayload ? "ESP32 computed" : "Awaiting"}
-            </span>
-          </div>
-          <dl className="grid grid-cols-3 gap-2.5">
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">Knee angle</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(processed.kneeAngleDeg, "°", 1)}
-              </dd>
-            </div>
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">Walking speed</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(processed.walkingSpeedMs, "m/s", 2)}
-              </dd>
-            </div>
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">Steps</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(processed.steps, "", 0)}
-              </dd>
-            </div>
-          </dl>
-        </section>
+        <div
+          className={`p-3 bg-surface-muted/40 border border-border rounded-sm ${
+            isKneeStale ? "opacity-65" : ""
+          }`}
+        >
+          <dt className="text-secondary">Joint vibration</dt>
+          <dd className="text-base font-semibold text-foreground mt-0.5">
+            {formatMetric(kp.vibration?.rms)}
+          </dd>
+        </div>
 
-        {/* Processed: Joint Vibration */}
-        <section className="border border-border rounded-sm bg-surface p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">
-              Joint vibration (Processed)
-            </h4>
-            <span className="text-[11px] text-muted">
-              {isStale ? "Stale" : hasPayload ? "Piezo features" : "Awaiting"}
-            </span>
-          </div>
-          <dl className="grid grid-cols-3 gap-2.5">
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">RMS</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(vibration.rms, "", 1)}
-              </dd>
-            </div>
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">Peak</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(vibration.peak, "", 0)}
-              </dd>
-            </div>
-            <div className="p-2.5 bg-surface-muted/40 border border-border rounded-sm">
-              <dt className="text-xs text-secondary">Spikes</dt>
-              <dd className="text-base font-semibold text-foreground mt-0.5">
-                {formatValue(vibration.spikes, "", 0)}
-              </dd>
-            </div>
-          </dl>
-        </section>
+        <div
+          className={`p-3 bg-surface-muted/40 border border-border rounded-sm ${
+            isInsoleStale ? "opacity-65" : ""
+          }`}
+        >
+          <dt className="text-secondary">Shoe angle</dt>
+          <dd className="text-base font-semibold text-foreground mt-0.5">
+            {formatMetric(ip.shoeAngleDeg, "°", 1)}
+          </dd>
+        </div>
 
-        {/* Raw: Accelerometer */}
-        <section className="border border-border rounded-sm bg-surface p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">
-              Accelerometer (Raw IMU)
-            </h4>
-            <span className="text-[11px] text-muted">acc.x / y / z</span>
-          </div>
-          <dl className="grid grid-cols-3 gap-2.5 font-mono">
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">X</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(acc.x, "", 2)}
-              </dd>
-            </div>
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">Y</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(acc.y, "", 2)}
-              </dd>
-            </div>
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">Z</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(acc.z, "", 2)}
-              </dd>
-            </div>
-          </dl>
-        </section>
+        <div
+          className={`p-3 bg-surface-muted/40 border border-border rounded-sm col-span-2 sm:col-span-1 ${
+            isInsoleStale ? "opacity-65" : ""
+          }`}
+        >
+          <dt className="text-secondary">Foot contact / Pressure</dt>
+          <dd className="text-base font-semibold text-foreground mt-0.5">
+            {footContactLabel} · {formatMetric(ip.fsr?.total)}
+          </dd>
+        </div>
+      </dl>
 
-        {/* Raw: Gyroscope */}
-        <section className="border border-border rounded-sm bg-surface p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-foreground">
-              Gyroscope (Raw IMU)
-            </h4>
-            <span className="text-[11px] text-muted">gyro.x / y / z</span>
-          </div>
-          <dl className="grid grid-cols-3 gap-2.5 font-mono">
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">X</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(gyro.x, "", 1)}
-              </dd>
-            </div>
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">Y</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(gyro.y, "", 1)}
-              </dd>
-            </div>
-            <div className="p-2 bg-surface-muted/30 border border-border rounded-sm">
-              <dt className="text-xs text-secondary font-sans">Z</dt>
-              <dd className="text-sm font-semibold text-foreground mt-0.5">
-                {formatValue(gyro.z, "", 1)}
-              </dd>
-            </div>
-          </dl>
-        </section>
-      </div>
-
-      {/* Bounded Live Trend Chart (only when >= 2 actual samples exist) */}
-      <LiveKneeTrendChart
-        historyBuffer={telemetry?.historyBuffer}
-        isStale={isStale}
-        isDemoData={isDemoData}
+      <CombinedMovementChart
+        kneeHistory={telemetry?.historyBuffer}
+        insoleHistory={insoleTelemetry?.historyBuffer}
+        isKneeStale={isKneeStale}
+        isInsoleStale={isInsoleStale}
       />
     </div>
   );
