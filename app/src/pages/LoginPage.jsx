@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
+import ThemeToggle from "../components/common/ThemeToggle";
 import { useAuth } from "../context/useAuth";
 
 export default function LoginPage() {
@@ -58,21 +59,16 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center px-4 py-10">
       <div className="w-full max-w-md mx-auto">
-        <div className="flex items-center gap-2.5 mb-6">
-          <span
-            className="inline-flex items-center justify-center w-7 h-7 bg-foreground text-surface rounded-[3px] text-xs font-bold"
-            aria-hidden="true"
-          >
-            JS
-          </span>
+        <div className="flex items-start justify-between gap-4 mb-6">
           <div>
             <div className="text-lg font-semibold text-foreground leading-tight">
               JointSense
             </div>
-            <div className="text-xs text-muted">
+            <div className="text-xs text-muted mt-0.5">
               Musculoskeletal Screening & Patient Registry
             </div>
           </div>
+          <ThemeToggle />
         </div>
 
         <section className="bg-surface border border-border rounded-sm p-6">

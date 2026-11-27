@@ -1,85 +1,96 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
-  --background: #f5f6f7;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-muted: #eef1f3;
-  --surface-hover: #e8ecef;
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
 
-  --foreground: #181d21;
-  --secondary: #525d66;
-  --muted: #75808a;
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
 
-  --border: #e1e5e8;
+  --background: light-dark(#f4f6f5, #0f1416);
+  --surface: light-dark(#ffffff, #161d20);
+  --surface-raised: light-dark(#ffffff, #1d262a);
+  --surface-muted: light-dark(#ebf0ee, #1d2629);
+  --surface-hover: light-dark(#dfe7e4, #263136);
 
-  --accent: #c56b20;
-  --accent-hover: #a95718;
-  --accent-foreground: #ffffff;
+  --foreground: light-dark(#141c1e, #ecf1f2);
+  --secondary: light-dark(#465458, #aebbc0);
+  --muted: light-dark(#647377, #7f8f94);
 
-  --link: #a95718;
+  --border: light-dark(#d4deda, #29353a);
 
-  --success-bg: #eaf6ef;
-  --success-border: #acd8bb;
-  --success-text: #236b3e;
-  --success-strong: #25834b;
+  /* Rich Clinical Deep Teal */
+  --accent: light-dark(#0f5e59, #2da99f);
+  --accent-hover: light-dark(#0b4945, #3dbcb2);
+  --accent-foreground: light-dark(#ffffff, #0b1414);
 
-  --warning-bg: #fff5e5;
-  --warning-border: #f0d09b;
-  --warning-text: #87520d;
+  --link: light-dark(#0d5550, #4cc5bb);
 
-  --danger-bg: #fff0ef;
-  --danger-border: #edb8b4;
-  --danger-text: #a52e28;
-  --danger-strong: #b93832;
+  --success-bg: light-dark(#e7f4ed, #13281f);
+  --success-border: light-dark(#a4d2b7, #28563d);
+  --success-text: light-dark(#1a5d37, #8bd3a5);
+  --success-strong: light-dark(#1e7042, #389a5f);
 
-  --info-bg: #edf5fc;
-  --info-border: #b8d5ed;
-  --info-text: #245d8b;
-  --info-strong: #3279b5;
+  --warning-bg: light-dark(#fbf3e3, #2b2213);
+  --warning-border: light-dark(#e3c58e, #664a20);
+  --warning-text: light-dark(#784b0d, #eec277);
+
+  --danger-bg: light-dark(#fcedec, #2e1819);
+  --danger-border: light-dark(#e3b0ad, #6c2f31);
+  --danger-text: light-dark(#9a2726, #f09b98);
+  --danger-strong: light-dark(#b2302e, #cf4f4b);
+
+  --info-bg: light-dark(#eaf3f8, #142732);
+  --info-border: light-dark(#accbe0, #2b5169);
+  --info-text: light-dark(#1b557a, #8ec5e8);
+  --info-strong: light-dark(#246e9c, #3d8bbb);
+
+  --backdrop-color: light-dark(rgb(20 28 30 / 0.45), rgb(6 10 12 / 0.65));
+
+  --scrollbar-track: light-dark(#ebf0ee, #161d20);
+  --scrollbar-thumb: light-dark(#94a39e, #3f4e54);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  accent-color: var(--accent);
 }
 
-.dark {
-  color-scheme: dark;
+@supports not (color: light-dark(white, black)) {
+  :root {
+    --background: #f4f6f5;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-muted: #ebf0ee;
+    --surface-hover: #dfe7e4;
+    --foreground: #141c1e;
+    --secondary: #465458;
+    --muted: #647377;
+    --border: #d4deda;
+    --accent: #0f5e59;
+    --accent-hover: #0b4945;
+    --accent-foreground: #ffffff;
+    --link: #0d5550;
+  }
 
-  --background: #101214;
-  --surface: #191d20;
-  --surface-raised: #22272b;
-  --surface-muted: #202529;
-  --surface-hover: #2b3237;
-
-  --foreground: #f4f5f6;
-  --secondary: #c0c7cd;
-  --muted: #929ca5;
-
-  --border: #30363b;
-
-  --accent: #e58a35;
-  --accent-hover: #f09b4d;
-  --accent-foreground: #17191b;
-
-  --link: #f0a65f;
-
-  --success-bg: #172b20;
-  --success-border: #315d40;
-  --success-text: #91d4a6;
-  --success-strong: #38985a;
-
-  --warning-bg: #302516;
-  --warning-border: #735126;
-  --warning-text: #f2c47f;
-
-  --danger-bg: #321c1b;
-  --danger-border: #713632;
-  --danger-text: #f1a09a;
-  --danger-strong: #cf5149;
-
-  --info-bg: #182a38;
-  --info-border: #315775;
-  --info-text: #9ac9ed;
-  --info-strong: #438dc5;
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0f1416;
+      --surface: #161d20;
+      --surface-raised: #1d262a;
+      --surface-muted: #1d2629;
+      --surface-hover: #263136;
+      --foreground: #ecf1f2;
+      --secondary: #aebbc0;
+      --muted: #7f8f94;
+      --border: #29353a;
+      --accent: #2da99f;
+      --accent-hover: #3dbcb2;
+      --accent-foreground: #0b1414;
+      --link: #4cc5bb;
+    }
+  }
 }
 
 @theme inline {
@@ -162,7 +173,7 @@ dialog:modal {
 dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
-  background-color: rgb(24 29 33 / 0.45);
+  background-color: var(--backdrop-color);
 }
 
 /* Form controls and deferred validation (:user-invalid) */

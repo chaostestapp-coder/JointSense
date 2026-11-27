@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../../context/useAuth";
+import ThemeToggle from "../common/ThemeToggle";
 
 const NAV_ITEMS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -47,12 +48,6 @@ export default function AppShell() {
           onClick={() => setMobileMenuOpen(false)}
           className="flex items-center gap-2.5 text-foreground font-semibold tracking-tight"
         >
-          <span
-            className="inline-flex items-center justify-center w-6 h-6 bg-foreground text-surface rounded-[3px] text-xs font-bold"
-            aria-hidden="true"
-          >
-            JS
-          </span>
           <span className="text-base">JointSense</span>
         </Link>
         <button
@@ -141,10 +136,11 @@ export default function AppShell() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 shrink-0">
             <span className="hidden sm:inline text-xs text-muted">
               {user?.email}
             </span>
+            <ThemeToggle />
             <Link
               to="/screening"
               className="link-button inline-flex items-center px-3 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
