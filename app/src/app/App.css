@@ -1,0 +1,151 @@
+
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+
+  --background: #f5f6f7;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-muted: #eef1f3;
+  --surface-hover: #e8ecef;
+
+  --foreground: #181d21;
+  --secondary: #525d66;
+  --muted: #75808a;
+
+  --border: #e1e5e8;
+
+  --accent: #c56b20;
+  --accent-hover: #a95718;
+  --accent-foreground: #ffffff;
+
+  --link: #a95718;
+
+  --success-bg: #eaf6ef;
+  --success-border: #acd8bb;
+  --success-text: #236b3e;
+  --success-strong: #25834b;
+
+  --warning-bg: #fff5e5;
+  --warning-border: #f0d09b;
+  --warning-text: #87520d;
+
+  --danger-bg: #fff0ef;
+  --danger-border: #edb8b4;
+  --danger-text: #a52e28;
+  --danger-strong: #b93832;
+
+  --info-bg: #edf5fc;
+  --info-border: #b8d5ed;
+  --info-text: #245d8b;
+  --info-strong: #3279b5;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #101214;
+  --surface: #191d20;
+  --surface-raised: #22272b;
+  --surface-muted: #202529;
+  --surface-hover: #2b3237;
+
+  --foreground: #f4f5f6;
+  --secondary: #c0c7cd;
+  --muted: #929ca5;
+
+  --border: #30363b;
+
+  --accent: #e58a35;
+  --accent-hover: #f09b4d;
+  --accent-foreground: #17191b;
+
+  --link: #f0a65f;
+
+  --success-bg: #172b20;
+  --success-border: #315d40;
+  --success-text: #91d4a6;
+  --success-strong: #38985a;
+
+  --warning-bg: #302516;
+  --warning-border: #735126;
+  --warning-text: #f2c47f;
+
+  --danger-bg: #321c1b;
+  --danger-border: #713632;
+  --danger-text: #f1a09a;
+  --danger-strong: #cf5149;
+
+  --info-bg: #182a38;
+  --info-border: #315775;
+  --info-text: #9ac9ed;
+  --info-strong: #438dc5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-foreground: var(--foreground);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+
+  --color-border: var(--border);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-link: var(--link);
+
+  --color-success-bg: var(--success-bg);
+  --color-success-border: var(--success-border);
+  --color-success-text: var(--success-text);
+  --color-success-strong: var(--success-strong);
+
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-warning-text: var(--warning-text);
+
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-danger-text: var(--danger-text);
+  --color-danger-strong: var(--danger-strong);
+
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+  --color-info-text: var(--info-text);
+  --color-info-strong: var(--info-strong);
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+button,
+.link-button {
+  transition: all 0.2s ease-in-out !important;
+  cursor: pointer;
+  outline: none;
+}
+
+button:hover,
+.link-button:hover {
+  transform: translateY(-2px);
+}
+
+button:active,
+.link-button:active {
+  transform: translateY(0) scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
