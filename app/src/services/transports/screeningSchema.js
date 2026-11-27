@@ -17,6 +17,8 @@ export const SCREENING_TESTS = [
       "Walk at your normal, safe pace past the 10-metre finish marker.",
       "Do not stop abruptly at the line; slow down after crossing the 10 m mark.",
     ],
+    completionCriteria:
+      "Click 'Complete & next test' as soon as the patient crosses the 10-metre finish line. Elapsed time and live sensor readings are saved automatically.",
     supportedVisuals: ["kneeMovement", "jointVibration", "rawImu", "liveTrend"],
   },
   {
@@ -31,6 +33,8 @@ export const SCREENING_TESTS = [
       "Cross your arms over your chest if safe to do so.",
       "Stand up fully and sit back down five consecutive times as steadily as you can.",
     ],
+    completionCriteria:
+      "Count 5 full stand-and-sit cycles, then click 'Complete & next test' when the patient finishes the 5th repetition.",
     supportedVisuals: ["kneeMovement", "jointVibration", "rawImu", "liveTrend"],
   },
   {
@@ -45,6 +49,8 @@ export const SCREENING_TESTS = [
       "Slowly straighten your knee as far as comfortable, then bend it back as far as you can.",
       "Repeat smoothly 3 times while reporting any pain, stiffness, or catching.",
     ],
+    completionCriteria:
+      "After 3 controlled bend-and-extend cycles, click 'Complete & review summary' to record the test and review results.",
     supportedVisuals: ["kneeMovement", "jointVibration", "rawImu", "liveTrend"],
   },
 ];

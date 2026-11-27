@@ -4,6 +4,7 @@ import { SCREENING_TESTS } from "../../services/transports/screeningSchema";
 export default function TestStepper({
   activeStepIndex,
   completedTests,
+  disabled = false,
   onSelectStep,
 }) {
   const steps = [
@@ -33,6 +34,7 @@ export default function TestStepper({
             <li key={step.id}>
               <button
                 type="button"
+                disabled={disabled}
                 onClick={() => onSelectStep(step.index)}
                 aria-current={isCurrent ? "step" : undefined}
                 className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between gap-2 text-sm transition-colors ${
