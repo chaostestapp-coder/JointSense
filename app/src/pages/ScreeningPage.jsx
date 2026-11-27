@@ -36,7 +36,7 @@ import {
   stopSpeaking,
 } from "../utils/speechHelper";
 
-const JOINT_OPTIONS = ["Knee", "Hip", "Shoulder", "Ankle"];
+const JOINT_OPTIONS = ["Knee"];
 const SIDE_OPTIONS = ["Right", "Left", "Bilateral"];
 
 function createInitialTestStates() {

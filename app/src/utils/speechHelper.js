@@ -52,35 +52,58 @@ export function speakText(text, lang = "en", { onStart, onEnd, onError } = {}) {
   speakTimer = setTimeout(() => {
     speakTimer = null;
     try {
-      const voices = synth.getVoices();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = targetLang;
-      utterance.rate = 0.95;
+      const attemptSpeak = () => {
+        const voices = synth.getVoices();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = targetLang;
+        utterance.rate = 0.95;
 
-      const matchedVoice = pickBestVoice(voices, targetLang);
-      if (matchedVoice) {
-        utterance.voice = matchedVoice;
-        utterance.lang = matchedVoice.lang || targetLang;
-      }
-
-      utterance.onstart = () => onStart?.();
-      utterance.onend = () => onEnd?.();
-      utterance.onerror = (event) => {
-        const errCode = event?.error || "unavailable";
-        if (errCode === "canceled" || errCode === "interrupted") {
-          onEnd?.();
-          return;
+        const matchedVoice = pickBestVoice(voices, targetLang);
+        if (matchedVoice) {
+          utterance.voice = matchedVoice;
+          utterance.lang = matchedVoice.lang || targetLang;
         }
-        onError?.(
-          "No working text-to-speech voice was found on this device or browser."
-        );
+
+        utterance.onstart = () => onStart?.();
+        utterance.onend = () => onEnd?.();
+        utterance.onerror = (event) => {
+          const errCode = event?.error || "unavailable";
+          if (errCode === "canceled" || errCode === "interrupted") {
+            onEnd?.();
+            return;
+          }
+          onError?.(
+            "No system speech voice is available in this browser. On Linux, install speech-dispatcher and espeak-ng (then restart the browser) or test on Android/Windows/macOS."
+          );
+        };
+
+        if (synth.paused) {
+          synth.resume();
+        }
+        synth.speak(utterance);
+        onStart?.();
       };
 
-      if (synth.paused) {
-        synth.resume();
+      const initialVoices = synth.getVoices();
+      if (initialVoices.length === 0 && typeof synth.addEventListener === "function") {
+        let handled = false;
+        const onVoices = () => {
+          if (handled) return;
+          handled = true;
+          synth.removeEventListener("voiceschanged", onVoices);
+          attemptSpeak();
+        };
+        synth.addEventListener("voiceschanged", onVoices);
+        setTimeout(() => {
+          if (!handled) {
+            handled = true;
+            synth.removeEventListener("voiceschanged", onVoices);
+            attemptSpeak();
+          }
+        }, 250);
+      } else {
+        attemptSpeak();
       }
-      synth.speak(utterance);
-      onStart?.();
     } catch {
       onError?.("Unable to start voice read aloud on this device.");
     }

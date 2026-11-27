@@ -19,7 +19,6 @@ export default function PatientsPage() {
 
   const [queryText, setQueryText] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [jointFilter, setJointFilter] = useState("All");
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
@@ -50,11 +49,9 @@ export default function PatientsPage() {
         patient.phone?.toLowerCase().includes(q);
       const matchesStatus =
         statusFilter === "All" || patient.status === statusFilter;
-      const matchesJoint =
-        jointFilter === "All" || patient.primaryJoint === jointFilter;
-      return matchesQuery && matchesStatus && matchesJoint;
+      return matchesQuery && matchesStatus;
     });
-  }, [patients, queryText, statusFilter, jointFilter]);
+  }, [patients, queryText, statusFilter]);
 
   const handleOpenCreate = () => {
     setEditingPatient(null);
@@ -107,7 +104,7 @@ export default function PatientsPage() {
       {/* Search and filter toolbar */}
       <search className="bg-surface border border-border rounded-sm p-3.5">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-          <div className="md:col-span-6">
+          <div className="md:col-span-8">
             <label
               htmlFor="patient-search"
               className="block text-xs font-medium text-secondary mb-1"
@@ -132,7 +129,7 @@ export default function PatientsPage() {
             </div>
           </div>
 
-          <div className="md:col-span-3">
+          <div className="md:col-span-4">
             <label
               htmlFor="status-filter"
               className="block text-xs font-medium text-secondary mb-1"
@@ -149,27 +146,6 @@ export default function PatientsPage() {
               <option value="Active">Active</option>
               <option value="Follow-up">Follow-up</option>
               <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-3">
-            <label
-              htmlFor="joint-filter"
-              className="block text-xs font-medium text-secondary mb-1"
-            >
-              Primary joint
-            </label>
-            <select
-              id="joint-filter"
-              value={jointFilter}
-              onChange={(e) => setJointFilter(e.target.value)}
-              className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
-            >
-              <option value="All">All joints</option>
-              <option value="Knee">Knee</option>
-              <option value="Hip">Hip</option>
-              <option value="Shoulder">Shoulder</option>
-              <option value="Ankle">Ankle</option>
             </select>
           </div>
         </div>

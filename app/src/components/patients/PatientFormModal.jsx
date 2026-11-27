@@ -205,9 +205,6 @@ function PatientFormBody({ initialPatient, onClose, onSubmit }) {
             className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
           >
             <option value="Knee">Knee</option>
-            <option value="Hip">Hip</option>
-            <option value="Shoulder">Shoulder</option>
-            <option value="Ankle">Ankle</option>
           </select>
         </div>
 
