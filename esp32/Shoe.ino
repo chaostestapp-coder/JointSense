@@ -9,7 +9,7 @@ const char* WIFI_SSID = "hotspot";
 const char* WIFI_PASS = "password";
 
 // Firebase RTDB Endpoint (Shoe Node)
-const char* FIREBASE_URL = "https://jointsense-a5897-default-rtdb.asia-southeast1.firebasedatabase.app/shoe/live.json";
+const char* FIREBASE_URL = "https://firebase_example.firebaseio.com";
 
 const int MPU_ADDR = 0x68; // AD0 open/GND
 
