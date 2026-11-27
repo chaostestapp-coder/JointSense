@@ -1,4 +1,3 @@
-
 @import "tailwindcss";
 
 :root {
@@ -126,26 +125,137 @@ html,
 body {
   background-color: var(--background);
   color: var(--foreground);
+  font-family: Calibri, Arial, "Helvetica Neue", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
 .link-button {
-  transition: all 0.2s ease-in-out !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   cursor: pointer;
-  outline: none;
-}
-
-button:hover,
-.link-button:hover {
-  transform: translateY(-2px);
-}
-
-button:active,
-.link-button:active {
-  transform: translateY(0) scale(0.97);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.55;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Native <dialog> modal scroll containment and backdrop */
+dialog:modal {
+  overscroll-behavior: contain;
+  margin: auto;
+  max-width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--surface);
+  color: var(--foreground);
+  padding: 0;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgb(24 29 33 / 0.45);
+}
+
+/* Form controls and deferred validation (:user-invalid) */
+input,
+select,
+textarea {
+  font: inherit;
+  font-size: max(1rem, 0.9375rem);
+}
+
+input:is(:user-invalid, .user-invalid-fallback),
+select:is(:user-invalid, .user-invalid-fallback),
+textarea:is(:user-invalid, .user-invalid-fallback) {
+  border-color: var(--danger-strong);
+  background-color: var(--danger-bg);
+}
+
+.field-error-msg {
+  display: none;
+  color: var(--danger-text);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+input:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg,
+select:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg,
+textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
+  display: block;
+}
+
+/* Clinical data table container & sticky headers */
+.clinical-table-region {
+  overflow-x: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+}
+
+.clinical-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.9375rem;
+}
+
+.clinical-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background-color: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+  color: var(--secondary);
+  font-weight: 600;
+  padding: 0.625rem 0.875rem;
+  white-space: nowrap;
+}
+
+.clinical-table tbody td,
+.clinical-table tbody th {
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 0.875rem;
+  vertical-align: middle;
+}
+
+.clinical-table tbody tr:last-child td,
+.clinical-table tbody tr:last-child th {
+  border-bottom: none;
+}
+
+.clinical-table tbody tr:hover {
+  background-color: var(--surface-muted);
+}
+
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body,
+  html {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
 }
