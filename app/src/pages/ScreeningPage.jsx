@@ -15,9 +15,8 @@ import {
 import {
   createEmptyTestTelemetry,
   SCREENING_TESTS,
-  TRANSPORT_TYPES,
 } from "../services/transports/screeningSchema";
-import { createScreeningTransport } from "../services/transports/screeningTransport";
+import { createFirebaseRtdbTransport } from "../services/transports/firebaseRtdbTransport";
 
 const JOINT_OPTIONS = ["Knee", "Hip", "Shoulder", "Ankle"];
 const SIDE_OPTIONS = ["Right", "Left", "Bilateral"];
@@ -79,14 +78,8 @@ export default function ScreeningPage() {
     clinicalObservations: "",
   });
 
-  // Transport abstraction state (default to Wi-Fi + Firebase Realtime Database)
-  const [transportType, setTransportType] = useState(
-    TRANSPORT_TYPES.FIREBASE_RTDB
-  );
-  const adapter = useMemo(
-    () => createScreeningTransport(transportType),
-    [transportType]
-  );
+  // Firebase RTDB live sensor listener
+  const adapter = useMemo(() => createFirebaseRtdbTransport(), []);
   const capabilities = useMemo(() => adapter.getCapabilities(), [adapter]);
   const [telemetry, setTelemetry] = useState(() =>
     createEmptyTestTelemetry(SCREENING_TESTS[0].id)
@@ -192,11 +185,15 @@ export default function ScreeningPage() {
   };
 
   const handleConnectTransport = async () => {
+    if (!selectedPatient) {
+      setConnectError("Select a patient before starting the sensor listener.");
+      return;
+    }
     setConnectError("");
     try {
       await adapter.connect();
     } catch (err) {
-      setConnectError(err.message || "Unable to connect to wearable device.");
+      setConnectError(err.message || "Unable to connect to Firebase.");
     }
   };
 
@@ -206,7 +203,7 @@ export default function ScreeningPage() {
   };
 
   const handleStartTest = async () => {
-    if (!activeTest) return;
+    if (!activeTest || !selectedPatient) return;
     timerStartRef.current = Date.now() - elapsedSec * 1000;
     setTimerRunning(true);
     setConnectError("");
@@ -508,24 +505,31 @@ export default function ScreeningPage() {
             </div>
           </section>
 
-          {/* Wearable Transport & Sensor Status */}
+          {/* Firebase RTDB Live Sensor Status */}
           <DeviceStatusBar
-            transportType={transportType}
-            onChangeTransport={(nextType) => {
-              setConnectError("");
-              setTransportType(nextType);
-            }}
             telemetry={telemetry}
             capabilities={capabilities}
+            disabled={!selectedPatient}
             onConnect={handleConnectTransport}
             onDisconnect={handleDisconnectTransport}
             connectError={connectError}
           />
 
+          {!selectedPatient && (
+            <div
+              role="status"
+              className="px-4 py-2.5 text-sm bg-warning-bg text-warning-text border border-warning-border rounded-sm"
+            >
+              Select a registered patient above before starting the screening
+              tests or sensor listener.
+            </div>
+          )}
+
           {/* 3-Test + Summary Stepper */}
           <TestStepper
             activeStepIndex={activeStepIndex}
             completedTests={testStates}
+            disabled={!selectedPatient}
             onSelectStep={handleSelectStep}
           />
 
@@ -559,12 +563,20 @@ export default function ScreeningPage() {
                     </ol>
                   </div>
 
+                  {activeTest.completionCriteria && (
+                    <div className="px-3 py-2 bg-surface-muted/50 border border-border rounded-sm text-xs text-secondary">
+                      <strong className="text-foreground">How to finish: </strong>
+                      {activeTest.completionCriteria}
+                    </div>
+                  )}
+
                   {/* Test Controls & Stopwatch */}
                   <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       {!timerRunning ? (
                         <button
                           type="button"
+                          disabled={!selectedPatient}
                           onClick={handleStartTest}
                           className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
                         >
@@ -584,6 +596,7 @@ export default function ScreeningPage() {
 
                       <button
                         type="button"
+                        disabled={!selectedPatient}
                         onClick={handleResetTest}
                         className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-secondary hover:text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
                       >
@@ -598,6 +611,7 @@ export default function ScreeningPage() {
                       </div>
                       <button
                         type="button"
+                        disabled={!selectedPatient}
                         onClick={handleCompleteTest}
                         className="px-4 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
                       >
