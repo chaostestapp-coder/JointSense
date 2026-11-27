@@ -318,6 +318,18 @@ function sanitizeTestResultsForStorage(tests = {}) {
               timing: entry.telemetry.timing || null,
             }
           : null,
+      insoleSnapshot:
+        entry.insoleTelemetry?.deviceType === "smart_insole" &&
+        entry.insoleTelemetry?.timing?.receivedAtMs
+          ? {
+              deviceType: "smart_insole",
+              rtdbPath: entry.insoleTelemetry.rtdbPath || null,
+              isStaleAtCapture: Boolean(entry.insoleTelemetry.isStale),
+              sole: entry.insoleTelemetry.sole || null,
+              ankle: entry.insoleTelemetry.ankle || null,
+              timing: entry.insoleTelemetry.timing || null,
+            }
+          : null,
       excludedDemoPreview: isDemo,
     };
   });
@@ -338,6 +350,7 @@ export async function createScreening(doctorId, screeningData) {
   const payload = {
     clientMutationId,
     doctorId,
+    doctorSnapshot: screeningData.doctorSnapshot || null,
     patientId: screeningData.patientId,
     patientName: screeningData.patientName,
     patientMrn: screeningData.patientMrn,

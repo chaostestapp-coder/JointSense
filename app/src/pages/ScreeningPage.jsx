@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import DeviceStatusBar from "../components/screening/DeviceStatusBar";
+import InsoleVisualisations from "../components/screening/InsoleVisualisations";
 import MovementIllustration from "../components/screening/MovementIllustration";
 import ScreeningSummaryStep from "../components/screening/ScreeningSummaryStep";
 import SensorVisualisations from "../components/screening/SensorVisualisations";
@@ -12,6 +13,8 @@ import {
   evaluateClinicalScreening,
   saveScreeningWithOfflineFallback,
 } from "../services/screeningService";
+import { createEmptyInsoleTelemetry } from "../services/transports/insoleSchema";
+import { createFirebaseInsoleTransport } from "../services/transports/firebaseInsoleTransport";
 import {
   createEmptyTestTelemetry,
   SCREENING_TESTS,
@@ -28,18 +31,21 @@ function createInitialTestStates() {
       elapsedSec: null,
       manualValues: { walkDurationSec: "" },
       telemetry: null,
+      insoleTelemetry: null,
     },
     sit_to_stand_5x: {
       completed: false,
       elapsedSec: null,
       manualValues: { sitToStandSec: "" },
       telemetry: null,
+      insoleTelemetry: null,
     },
     knee_bend_extend: {
       completed: false,
       elapsedSec: null,
       manualValues: { flexionDeg: "", extensionDeficitDeg: "" },
       telemetry: null,
+      insoleTelemetry: null,
     },
   };
 }
@@ -51,7 +57,7 @@ function formatTimer(seconds) {
 }
 
 export default function ScreeningPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedPatientId = searchParams.get("patientId") || "";
@@ -78,13 +84,24 @@ export default function ScreeningPage() {
     clinicalObservations: "",
   });
 
-  // Firebase RTDB live sensor listener
+  // Firebase RTDB live sensor listener (Knee Sleeve)
   const adapter = useMemo(() => createFirebaseRtdbTransport(), []);
   const capabilities = useMemo(() => adapter.getCapabilities(), [adapter]);
   const [telemetry, setTelemetry] = useState(() =>
     createEmptyTestTelemetry(SCREENING_TESTS[0].id)
   );
   const [connectError, setConnectError] = useState("");
+
+  // Independent Smart Insole RTDB listener
+  const insoleAdapter = useMemo(() => createFirebaseInsoleTransport(), []);
+  const insoleCapabilities = useMemo(
+    () => insoleAdapter.getCapabilities(),
+    [insoleAdapter]
+  );
+  const [insoleTelemetry, setInsoleTelemetry] = useState(() =>
+    createEmptyInsoleTelemetry()
+  );
+  const [insoleConnectError, setInsoleConnectError] = useState("");
 
   // Stopwatch state for the active test
   const [timerRunning, setTimerRunning] = useState(false);
@@ -138,6 +155,29 @@ export default function ScreeningPage() {
       adapter.disconnect().catch(() => {});
     };
   }, [adapter]);
+
+  // Independent Smart Insole subscription
+  useEffect(() => {
+    const unsubscribe = insoleAdapter.subscribe((snapshot) => {
+      setInsoleTelemetry(snapshot);
+      if (snapshot?.timing?.receivedAtMs) {
+        const currentTest = SCREENING_TESTS[activeStepIndex];
+        if (!currentTest) return;
+        setTestStates((prev) => ({
+          ...prev,
+          [currentTest.id]: {
+            ...prev[currentTest.id],
+            insoleTelemetry: snapshot,
+          },
+        }));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      insoleAdapter.disconnect().catch(() => {});
+    };
+  }, [insoleAdapter, activeStepIndex]);
 
   // Keep transport notified when active test changes
   useEffect(() => {
@@ -200,6 +240,28 @@ export default function ScreeningPage() {
   const handleDisconnectTransport = async () => {
     setConnectError("");
     await adapter.disconnect();
+  };
+
+  const handleConnectInsole = async () => {
+    if (!selectedPatient) {
+      setInsoleConnectError(
+        "Select a patient before starting the smart insole listener."
+      );
+      return;
+    }
+    setInsoleConnectError("");
+    try {
+      await insoleAdapter.connect();
+    } catch (err) {
+      setInsoleConnectError(
+        err.message || "Smart insole listener is not ready yet."
+      );
+    }
+  };
+
+  const handleDisconnectInsole = async () => {
+    setInsoleConnectError("");
+    await insoleAdapter.disconnect();
   };
 
   const handleStartTest = async () => {
@@ -359,6 +421,14 @@ export default function ScreeningPage() {
         patientId: selectedPatient.id,
         patientName: selectedPatient.fullName,
         patientMrn: selectedPatient.mrn,
+        doctorSnapshot: {
+          fullName:
+            profile?.fullName || user?.displayName || user?.email || "",
+          department:
+            profile?.department || "Outpatient Musculoskeletal Clinic",
+          specialty: profile?.specialty || "",
+          licenseId: profile?.licenseId || "",
+        },
         ...compiledScreeningData,
       });
 
@@ -749,11 +819,20 @@ export default function ScreeningPage() {
               </div>
 
               {/* Sensor Visualisations Area (Relevant to Active Test Only) */}
-              <div className="p-5">
+              <div className="p-5 space-y-5">
                 <SensorVisualisations
                   test={activeTest}
                   telemetry={telemetry}
                   manualValues={testStates[activeTest.id]?.manualValues}
+                />
+
+                <InsoleVisualisations
+                  insoleTelemetry={insoleTelemetry}
+                  capabilities={insoleCapabilities}
+                  disabled={!selectedPatient}
+                  onConnect={handleConnectInsole}
+                  onDisconnect={handleDisconnectInsole}
+                  connectError={insoleConnectError}
                 />
               </div>
             </section>

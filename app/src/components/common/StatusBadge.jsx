@@ -17,6 +17,10 @@ const STATUS_STYLES = {
   "Firebase configuration missing": "bg-danger-bg text-danger-text border-danger-border",
   "Connection error": "bg-danger-bg text-danger-text border-danger-border",
   "Not connected": "bg-surface-muted text-secondary border-border",
+  "Not configured": "bg-surface-muted text-secondary border-border",
+  "Pending hardware specifications": "bg-surface-muted text-secondary border-border",
+  "Waiting for insole data": "bg-warning-bg text-warning-text border-warning-border",
+  "Receiving insole data": "bg-success-bg text-success-text border-success-border",
   Inactive: "bg-surface-muted text-secondary border-border",
 };
 
