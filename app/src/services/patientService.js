@@ -22,6 +22,24 @@ function ensureFirestore() {
   }
 }
 
+function withFirestoreTimeout(promise, actionLabel = "save to Firestore") {
+  const timeoutMs = 8000;
+  let timerId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(
+        new Error(
+          `Timed out trying to ${actionLabel}. Verify that Cloud Firestore (not only Realtime Database) is created in Firebase Console, rules are published, and browser shields are not blocking firestore.googleapis.com.`
+        )
+      );
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timerId);
+  });
+}
+
 function sortByNewest(records) {
   return [...records].sort((a, b) => {
     const aTime = a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0;
@@ -109,20 +127,29 @@ export async function createPatient(doctorId, patientData) {
     updatedAt: serverTimestamp(),
   };
 
-  const docRef = await addDoc(collection(db, PATIENTS_COLLECTION), payload);
+  const docRef = await withFirestoreTimeout(
+    addDoc(collection(db, PATIENTS_COLLECTION), payload),
+    "save patient record"
+  );
   return docRef.id;
 }
 
 export async function updatePatient(patientId, updates) {
   ensureFirestore();
   const patientRef = doc(db, PATIENTS_COLLECTION, patientId);
-  await updateDoc(patientRef, {
-    ...updates,
-    updatedAt: serverTimestamp(),
-  });
+  await withFirestoreTimeout(
+    updateDoc(patientRef, {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    }),
+    "update patient record"
+  );
 }
 
 export async function deletePatient(patientId) {
   ensureFirestore();
-  await deleteDoc(doc(db, PATIENTS_COLLECTION, patientId));
+  await withFirestoreTimeout(
+    deleteDoc(doc(db, PATIENTS_COLLECTION, patientId)),
+    "delete patient record"
+  );
 }

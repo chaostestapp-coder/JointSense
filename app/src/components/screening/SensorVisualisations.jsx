@@ -80,12 +80,12 @@ function LiveKneeTrendChart({ historyBuffer, isStale, isDemoData }) {
         </div>
         <div className="flex items-center gap-2">
           {isDemoData && (
-            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-[2px]">
+            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
               Demo
             </span>
           )}
           {isStale && (
-            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-[2px]">
+            <span className="text-[11px] font-medium px-1.5 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
               Stale
             </span>
           )}
