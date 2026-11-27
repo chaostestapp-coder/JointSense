@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import api from "../config/api";
 import { db, isFirebaseConfigured } from "../config/firebase";
+import { extractScreeningFeatures } from "./ml/screeningFeatureExtractor";
 import {
   generateClientMutationId,
   getPendingScreenings,
@@ -313,6 +314,7 @@ function sanitizeTestResultsForStorage(tests = {}) {
               sourceType: entry.telemetry.sourceType,
               rtdbPath: entry.telemetry.rtdbPath || null,
               isStaleAtCapture: Boolean(entry.telemetry.isStale),
+              wasInterrupted: Boolean(entry.kneeInterrupted),
               processed: entry.telemetry.processed || null,
               rawImu: entry.telemetry.rawImu || null,
               timing: entry.telemetry.timing || null,
@@ -325,6 +327,9 @@ function sanitizeTestResultsForStorage(tests = {}) {
               deviceType: "smart_insole",
               rtdbPath: entry.insoleTelemetry.rtdbPath || null,
               isStaleAtCapture: Boolean(entry.insoleTelemetry.isStale),
+              wasInterrupted: Boolean(entry.insoleInterrupted),
+              processed: entry.insoleTelemetry.processed || null,
+              rawImu: entry.insoleTelemetry.rawImu || null,
               sole: entry.insoleTelemetry.sole || null,
               ankle: entry.insoleTelemetry.ankle || null,
               timing: entry.insoleTelemetry.timing || null,
@@ -334,6 +339,56 @@ function sanitizeTestResultsForStorage(tests = {}) {
     };
   });
   return sanitized;
+}
+
+function buildSensorsSummary(sanitizedTests = {}) {
+  const order = ["knee_bend_extend", "sit_to_stand_5x", "walk_10m"];
+  let latestKnee = null;
+  let latestInsole = null;
+  let kneeInterrupted = false;
+  let insoleInterrupted = false;
+
+  for (const id of order) {
+    const entry = sanitizedTests[id];
+    if (!entry) continue;
+    if (entry.sensorSnapshot?.wasInterrupted) kneeInterrupted = true;
+    if (entry.insoleSnapshot?.wasInterrupted) insoleInterrupted = true;
+
+    if (
+      entry.sensorSnapshot &&
+      (!latestKnee ||
+        (entry.sensorSnapshot.timing?.receivedAtMs || 0) >
+          (latestKnee.timing?.receivedAtMs || 0))
+    ) {
+      latestKnee = entry.sensorSnapshot;
+    }
+
+    if (
+      entry.insoleSnapshot &&
+      (!latestInsole ||
+        (entry.insoleSnapshot.timing?.receivedAtMs || 0) >
+          (latestInsole.timing?.receivedAtMs || 0))
+    ) {
+      latestInsole = entry.insoleSnapshot;
+    }
+  }
+
+  return {
+    kneeSleeve: {
+      available: Boolean(latestKnee),
+      rtdbPath: latestKnee?.rtdbPath || null,
+      latestSnapshot: latestKnee,
+      capturedAt: latestKnee?.timing?.receivedAtMs || null,
+      wasInterrupted: kneeInterrupted,
+    },
+    smartInsole: {
+      available: Boolean(latestInsole),
+      rtdbPath: latestInsole?.rtdbPath || null,
+      latestSnapshot: latestInsole,
+      capturedAt: latestInsole?.timing?.receivedAtMs || null,
+      wasInterrupted: insoleInterrupted,
+    },
+  };
 }
 
 export async function createScreening(doctorId, screeningData) {
@@ -346,6 +401,16 @@ export async function createScreening(doctorId, screeningData) {
 
   const toNumberOrNull = (val) =>
     val !== "" && val != null && !Number.isNaN(Number(val)) ? Number(val) : null;
+
+  const sanitizedGuidedTests = sanitizeTestResultsForStorage(
+    screeningData.guidedTests
+  );
+  const sensorsSummary = buildSensorsSummary(sanitizedGuidedTests);
+  const extractedFeatures = extractScreeningFeatures({
+    clinical: screeningData,
+    kneeSleeveSnapshot: sensorsSummary.kneeSleeve.latestSnapshot,
+    smartInsoleSnapshot: sensorsSummary.smartInsole.latestSnapshot,
+  });
 
   const payload = {
     clientMutationId,
@@ -369,7 +434,9 @@ export async function createScreening(doctorId, screeningData) {
     instabilityReported: Boolean(screeningData.instabilityReported),
     gaitStatus: screeningData.gaitStatus || "Unassisted",
     clinicalObservations: screeningData.clinicalObservations?.trim() || "",
-    guidedTests: sanitizeTestResultsForStorage(screeningData.guidedTests),
+    guidedTests: sanitizedGuidedTests,
+    sensors: sensorsSummary,
+    featureAvailability: extractedFeatures.availability,
     riskLevel: assessment.riskLevel,
     flaggedCount: assessment.flaggedCount ?? 0,
     evaluatedCount: assessment.evaluatedCount ?? 0,

@@ -181,7 +181,9 @@ export function generateScreeningReportPdf({
   });
 
   // Knee Sleeve Sensor Snapshot (if captured)
-  const kneeSnap = getLatestKneeSnapshot(screening.guidedTests);
+  const kneeSnap =
+    screening.sensors?.kneeSleeve?.latestSnapshot ||
+    getLatestKneeSnapshot(screening.guidedTests);
   if (kneeSnap) {
     const p = kneeSnap.processed || {};
     const v = p.vibration || {};
@@ -240,18 +242,25 @@ export function generateScreeningReportPdf({
   }
 
   // Smart Insole Sensor Snapshot (when integrated and captured)
-  const insoleSnap = getLatestInsoleSnapshot(screening.guidedTests);
+  const insoleSnap =
+    screening.sensors?.smartInsole?.latestSnapshot ||
+    getLatestInsoleSnapshot(screening.guidedTests);
   if (insoleSnap) {
+    const ip = insoleSnap.processed || {};
+    const fsr = ip.fsr || {};
+    const bal = ip.balance || {};
+    const iAcc = insoleSnap.rawImu?.acc || {};
+    const iGyro = insoleSnap.rawImu?.gyro || {};
     const pressure = insoleSnap.sole?.pressureDistribution;
-    const pressureText = pressure
-      ? pressure.aggregatedValue != null
-        ? `${pressure.aggregatedValue} ${pressure.unit || ""}`
-        : Array.isArray(pressure.channels)
-          ? pressure.channels
-              .map((c) => `${c.label}: ${c.value} ${pressure.unit || ""}`)
-              .join(", ")
-          : "Recorded"
-      : "Not recorded";
+
+    const shoeAngle = ip.shoeAngleDeg ?? insoleSnap.ankle?.angle;
+    const footContactText =
+      ip.footContact === true
+        ? "In contact"
+        : ip.footContact === false
+          ? "No contact"
+          : "Not recorded";
+    const totalPressure = fsr.total ?? pressure?.aggregatedValue ?? null;
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 6,
@@ -259,14 +268,54 @@ export function generateScreeningReportPdf({
       theme: "grid",
       styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [20, 28, 30] },
       headStyles: { fillColor: [235, 240, 238], textColor: [20, 28, 30] },
-      head: [["Smart Insole Measurement", "Recorded Value"]],
-      body: [
-        ["Sole Pressure Distribution", pressureText],
+      head: [
         [
-          "Ankle Angle",
-          insoleSnap.ankle?.angle != null
-            ? `${insoleSnap.ankle.angle} ${insoleSnap.ankle.unit || ""}`
+          "Smart Insole Snapshot (Captured)",
+          "Value",
+          "Raw IMU / Timing",
+          "Value",
+        ],
+      ],
+      body: [
+        [
+          "Shoe Angle",
+          formatNumberOrFallback(shoeAngle, "deg"),
+          "Accelerometer (X, Y, Z)",
+          `${formatNumberOrFallback(iAcc.x)}, ${formatNumberOrFallback(
+            iAcc.y
+          )}, ${formatNumberOrFallback(iAcc.z)}`,
+        ],
+        [
+          "Foot Contact",
+          footContactText,
+          "Gyroscope (X, Y, Z)",
+          `${formatNumberOrFallback(iGyro.x)}, ${formatNumberOrFallback(
+            iGyro.y
+          )}, ${formatNumberOrFallback(iGyro.z)}`,
+        ],
+        [
+          "Total Pressure",
+          formatNumberOrFallback(totalPressure),
+          "Device Timestamp",
+          insoleSnap.timing?.deviceTimestamp != null
+            ? String(insoleSnap.timing.deviceTimestamp)
             : "Not recorded",
+        ],
+        [
+          "FSR (Heel / Inner / Outer / Toe)",
+          `${formatNumberOrFallback(fsr.heel)} / ${formatNumberOrFallback(
+            fsr.inner
+          )} / ${formatNumberOrFallback(fsr.outer)} / ${formatNumberOrFallback(
+            fsr.toe
+          )}`,
+          "Balance % (Heel / Inner / Outer / Toe)",
+          `${formatNumberOrFallback(bal.heelPct, "%")} / ${formatNumberOrFallback(
+            bal.innerPct,
+            "%"
+          )} / ${formatNumberOrFallback(bal.outerPct, "%")} / ${formatNumberOrFallback(
+            bal.toePct,
+            "%"
+          )}`,
         ],
       ],
     });

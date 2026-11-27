@@ -202,8 +202,18 @@ export default function ScreeningResultPage() {
   }
 
   const age = patient?.dateOfBirth ? calculateAge(patient.dateOfBirth) : null;
-  const kneeSnap = getLatestKneeSnapshot(screening.guidedTests);
-  const insoleSnap = getLatestInsoleSnapshot(screening.guidedTests);
+  const kneeSnap =
+    screening.sensors?.kneeSleeve?.latestSnapshot ||
+    getLatestKneeSnapshot(screening.guidedTests);
+  const insoleSnap =
+    screening.sensors?.smartInsole?.latestSnapshot ||
+    getLatestInsoleSnapshot(screening.guidedTests);
+  const kneeInterrupted = Boolean(
+    screening.sensors?.kneeSleeve?.wasInterrupted || kneeSnap?.wasInterrupted
+  );
+  const insoleInterrupted = Boolean(
+    screening.sensors?.smartInsole?.wasInterrupted || insoleSnap?.wasInterrupted
+  );
   const hasStoredReport =
     screening.report?.status === "available" &&
     Boolean(screening.report?.storagePath);
@@ -397,9 +407,37 @@ export default function ScreeningResultPage() {
           </div>
         </div>
 
-        <div className="p-4 space-y-2">
+        <div className="p-4 space-y-2.5">
           <div className="text-xs text-secondary">Screening guidance</div>
           <p className="text-sm text-foreground">{screening.recommendation}</p>
+          <div className="pt-2 border-t border-border grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+            <div>
+              <span className="text-secondary">Knee sleeve: </span>
+              <strong className="text-foreground">
+                {kneeSnap
+                  ? kneeInterrupted
+                    ? "Captured (interrupted)"
+                    : "Captured"
+                  : "Unavailable"}
+              </strong>
+            </div>
+            <div>
+              <span className="text-secondary">Smart insole: </span>
+              <strong className="text-foreground">
+                {insoleSnap
+                  ? insoleInterrupted
+                    ? "Captured (interrupted)"
+                    : "Captured"
+                  : "Unavailable"}
+              </strong>
+            </div>
+            <div>
+              <span className="text-secondary">ML model: </span>
+              <strong className="text-foreground">
+                {screening.mlModelIntegrated ? "Integrated" : "Not integrated"}
+              </strong>
+            </div>
+          </div>
           <p className="text-xs text-muted">
             JointSense provides threshold-based screening assistance and does
             not establish a confirmed clinical diagnosis.
@@ -466,17 +504,28 @@ export default function ScreeningResultPage() {
         </section>
       )}
 
-      {/* Captured Knee Sleeve Sensor Snapshot (when present) */}
-      {kneeSnap && (
-        <section className="bg-surface border border-border rounded-sm">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <h2 className="text-base font-semibold text-foreground">
-              Captured knee sleeve sensor snapshot
-            </h2>
-            <span className="text-xs text-muted font-mono">
-              {kneeSnap.rtdbPath || "/knee_sleeve/live"}
+      {/* Knee Sleeve Analysis */}
+      <section className="bg-surface border border-border rounded-sm">
+        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-foreground">
+            Knee sleeve analysis
+          </h2>
+          <div className="flex items-center gap-2 text-xs">
+            {kneeInterrupted && (
+              <span className="px-2 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
+                Stream interrupted
+              </span>
+            )}
+            <span className="text-muted font-mono">
+              {kneeSnap?.rtdbPath || "/knee_sleeve/live"}
             </span>
           </div>
+        </div>
+        {!kneeSnap ? (
+          <div className="px-4 py-5 text-sm text-secondary">
+            Knee sleeve sensor data was unavailable during this screening.
+          </div>
+        ) : (
           <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
             <div className="bg-surface px-4 py-3">
               <dt className="text-xs text-secondary">Knee angle</dt>
@@ -532,37 +581,107 @@ export default function ScreeningResultPage() {
               </dd>
             </div>
           </dl>
-        </section>
-      )}
+        )}
+      </section>
 
-      {/* Captured Smart Insole Snapshot (only if real data was captured) */}
-      {insoleSnap && (
-        <section className="bg-surface border border-border rounded-sm">
-          <div className="px-4 py-3 border-b border-border">
-            <h2 className="text-base font-semibold text-foreground">
-              Captured smart insole snapshot
-            </h2>
+      {/* Smart Insole Analysis */}
+      <section className="bg-surface border border-border rounded-sm">
+        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-foreground">
+            Smart insole analysis
+          </h2>
+          <div className="flex items-center gap-2 text-xs">
+            {insoleInterrupted && (
+              <span className="px-2 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
+                Stream interrupted
+              </span>
+            )}
+            <span className="text-muted font-mono">
+              {insoleSnap?.rtdbPath || "/shoe/live"}
+            </span>
           </div>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
+        </div>
+        {!insoleSnap ? (
+          <div className="px-4 py-5 text-sm text-secondary">
+            Smart insole sensor data was unavailable during this screening.
+          </div>
+        ) : (
+          <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
             <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Ankle angle</dt>
+              <dt className="text-xs text-secondary">Shoe angle</dt>
               <dd className="font-medium text-foreground mt-0.5">
-                {insoleSnap.ankle?.angle != null
-                  ? `${insoleSnap.ankle.angle} ${insoleSnap.ankle.unit || ""}`
-                  : "Not recorded"}
+                {formatValue(
+                  insoleSnap.processed?.shoeAngleDeg ?? insoleSnap.ankle?.angle,
+                  "°"
+                )}
               </dd>
             </div>
             <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Sole pressure</dt>
+              <dt className="text-xs text-secondary">Foot contact</dt>
               <dd className="font-medium text-foreground mt-0.5">
-                {insoleSnap.sole?.pressureDistribution
-                  ? "Recorded (see PDF report)"
-                  : "Not recorded"}
+                {insoleSnap.processed?.footContact === true
+                  ? "In contact"
+                  : insoleSnap.processed?.footContact === false
+                    ? "No contact"
+                    : "Not recorded"}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Total pressure</dt>
+              <dd className="font-medium text-foreground mt-0.5">
+                {formatValue(
+                  insoleSnap.processed?.fsr?.total ??
+                    insoleSnap.sole?.pressureDistribution?.aggregatedValue
+                )}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3">
+              <dt className="text-xs text-secondary">Device timestamp</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {insoleSnap.timing?.deviceTimestamp ?? "Not recorded"}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3 col-span-2">
+              <dt className="text-xs text-secondary">
+                Regional pressure (Heel / Inner / Outer / Toe)
+              </dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(insoleSnap.processed?.fsr?.heel)} /{" "}
+                {formatValue(insoleSnap.processed?.fsr?.inner)} /{" "}
+                {formatValue(insoleSnap.processed?.fsr?.outer)} /{" "}
+                {formatValue(insoleSnap.processed?.fsr?.toe)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3 col-span-2">
+              <dt className="text-xs text-secondary">
+                Balance distribution (Heel / Inner / Outer / Toe)
+              </dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(insoleSnap.processed?.balance?.heelPct, "%")} /{" "}
+                {formatValue(insoleSnap.processed?.balance?.innerPct, "%")} /{" "}
+                {formatValue(insoleSnap.processed?.balance?.outerPct, "%")} /{" "}
+                {formatValue(insoleSnap.processed?.balance?.toePct, "%")}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3 col-span-2">
+              <dt className="text-xs text-secondary">Accelerometer (X, Y, Z)</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(insoleSnap.rawImu?.acc?.x)},{" "}
+                {formatValue(insoleSnap.rawImu?.acc?.y)},{" "}
+                {formatValue(insoleSnap.rawImu?.acc?.z)}
+              </dd>
+            </div>
+            <div className="bg-surface px-4 py-3 col-span-2">
+              <dt className="text-xs text-secondary">Gyroscope (X, Y, Z)</dt>
+              <dd className="font-mono text-xs text-foreground mt-1">
+                {formatValue(insoleSnap.rawImu?.gyro?.x)},{" "}
+                {formatValue(insoleSnap.rawImu?.gyro?.y)},{" "}
+                {formatValue(insoleSnap.rawImu?.gyro?.z)}
               </dd>
             </div>
           </dl>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Measurements Comparison Table */}
       <section className="bg-surface border border-border rounded-sm">
