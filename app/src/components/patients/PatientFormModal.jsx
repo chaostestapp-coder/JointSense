@@ -78,12 +78,19 @@ function PatientFormBody({ initialPatient, onClose, onSubmit }) {
             name="mrn"
             type="text"
             required
-            autoFocus
+            autoFocus={!initialPatient}
+            readOnly={Boolean(initialPatient)}
+            disabled={Boolean(initialPatient)}
             value={form.mrn}
             onChange={handleChange}
             placeholder="JS-1042"
-            className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
+            className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground disabled:bg-surface-muted disabled:text-secondary"
           />
+          {initialPatient && (
+            <span className="block text-xs text-muted mt-1">
+              MRN is permanent after registration.
+            </span>
+          )}
         </div>
 
         <div>

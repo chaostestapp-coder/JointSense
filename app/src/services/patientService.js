@@ -1,11 +1,10 @@
 import {
-  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -13,6 +12,14 @@ import {
 import { db, isFirebaseConfigured } from "../config/firebase";
 
 const PATIENTS_COLLECTION = "patients";
+const PATIENT_MRNS_COLLECTION = "patientMrns";
+
+function normalizeMrnKey(mrn) {
+  return String(mrn || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\//g, "_");
+}
 
 function ensureFirestore() {
   if (!isFirebaseConfigured || !db) {
@@ -107,9 +114,19 @@ export async function getPatientById(patientId) {
 
 export async function createPatient(doctorId, patientData) {
   ensureFirestore();
+  const trimmedMrn = patientData.mrn.trim();
+  const mrnKey = normalizeMrnKey(trimmedMrn);
+  if (!mrnKey) {
+    throw new Error("Medical Record Number (MRN) is required.");
+  }
+
+  const patientRef = doc(collection(db, PATIENTS_COLLECTION));
+  const mrnRef = doc(db, PATIENT_MRNS_COLLECTION, mrnKey);
+
   const payload = {
     doctorId,
-    mrn: patientData.mrn.trim(),
+    mrn: trimmedMrn,
+    mrnNormalized: mrnKey,
     fullName: patientData.fullName.trim(),
     dateOfBirth: patientData.dateOfBirth,
     sex: patientData.sex,
@@ -127,19 +144,35 @@ export async function createPatient(doctorId, patientData) {
     updatedAt: serverTimestamp(),
   };
 
-  const docRef = await withFirestoreTimeout(
-    addDoc(collection(db, PATIENTS_COLLECTION), payload),
+  await withFirestoreTimeout(
+    runTransaction(db, async (transaction) => {
+      const existingMrn = await transaction.get(mrnRef);
+      if (existingMrn.exists()) {
+        throw new Error(
+          `A patient with MRN "${trimmedMrn}" is already registered.`
+        );
+      }
+      transaction.set(mrnRef, {
+        doctorId,
+        patientId: patientRef.id,
+        mrn: trimmedMrn,
+        createdAt: serverTimestamp(),
+      });
+      transaction.set(patientRef, payload);
+    }),
     "save patient record"
   );
-  return docRef.id;
+
+  return patientRef.id;
 }
 
 export async function updatePatient(patientId, updates) {
   ensureFirestore();
   const patientRef = doc(db, PATIENTS_COLLECTION, patientId);
+  const { mrn: _ignoredMrn, mrnNormalized: _ignoredNorm, ...safeUpdates } = updates;
   await withFirestoreTimeout(
     updateDoc(patientRef, {
-      ...updates,
+      ...safeUpdates,
       updatedAt: serverTimestamp(),
     }),
     "update patient record"
@@ -148,8 +181,23 @@ export async function updatePatient(patientId, updates) {
 
 export async function deletePatient(patientId) {
   ensureFirestore();
+  const patientRef = doc(db, PATIENTS_COLLECTION, patientId);
   await withFirestoreTimeout(
-    deleteDoc(doc(db, PATIENTS_COLLECTION, patientId)),
+    runTransaction(db, async (transaction) => {
+      const patientSnap = await transaction.get(patientRef);
+      if (!patientSnap.exists()) return;
+      const mrnKey =
+        patientSnap.data().mrnNormalized ||
+        normalizeMrnKey(patientSnap.data().mrn);
+      if (mrnKey) {
+        const mrnRef = doc(db, PATIENT_MRNS_COLLECTION, mrnKey);
+        const mrnSnap = await transaction.get(mrnRef);
+        if (mrnSnap.exists() && mrnSnap.data().patientId === patientId) {
+          transaction.delete(mrnRef);
+        }
+      }
+      transaction.delete(patientRef);
+    }),
     "delete patient record"
   );
 }
