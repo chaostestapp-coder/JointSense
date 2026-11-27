@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, Link, useLocation } from "react-router";
 import {
   ClipboardCheck,
@@ -6,9 +6,12 @@ import {
   LogOut,
   Menu,
   Users,
+  WifiOff,
   X,
 } from "lucide-react";
 import { useAuth } from "../../context/useAuth";
+import { getPendingScreenings } from "../../services/offlineSyncService";
+import { syncQueuedScreenings } from "../../services/screeningService";
 import ThemeToggle from "../common/ThemeToggle";
 
 const NAV_ITEMS = [
@@ -21,7 +24,7 @@ function getPageTitle(pathname) {
   if (pathname === "/") return "Doctor Dashboard";
   if (pathname === "/patients") return "Patient Management";
   if (pathname.startsWith("/patients/")) return "Patient Details";
-  if (pathname === "/screening") return "Joint Screening";
+  if (pathname === "/screening") return "Guided Screening";
   if (pathname.startsWith("/screenings/")) return "Screening Result";
   return "JointSense";
 }
@@ -30,11 +33,63 @@ export default function AppShell() {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
   const clinicianName =
     profile?.fullName || user?.displayName || user?.email || "Clinician";
   const clinicianDept =
     profile?.department || "Outpatient Musculoskeletal Clinic";
+
+  useEffect(() => {
+    const refreshQueue = async () => {
+      if (!user?.uid) return;
+      try {
+        const list = await getPendingScreenings(user.uid);
+        setPendingCount(list.length);
+      } catch {
+        // IndexedDB unavailable
+      }
+    };
+
+    const handleOnline = async () => {
+      setIsOnline(true);
+      if (user?.uid) {
+        setSyncing(true);
+        try {
+          await syncQueuedScreenings(user.uid);
+        } finally {
+          setSyncing(false);
+          refreshQueue();
+        }
+      }
+    };
+
+    const handleOffline = () => setIsOnline(false);
+
+    refreshQueue();
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [user?.uid, location.pathname]);
+
+  const handleManualSync = async () => {
+    if (!user?.uid || !isOnline) return;
+    setSyncing(true);
+    try {
+      await syncQueuedScreenings(user.uid);
+      const list = await getPendingScreenings(user.uid);
+      setPendingCount(list.length);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -137,7 +192,25 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <span className="hidden sm:inline text-xs text-muted">
+            {!isOnline && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-warning-bg text-warning-text border border-warning-border rounded-sm">
+                <WifiOff size={13} strokeWidth={1.75} aria-hidden="true" />
+                <span>Offline</span>
+              </span>
+            )}
+            {pendingCount > 0 && (
+              <button
+                type="button"
+                disabled={!isOnline || syncing}
+                onClick={handleManualSync}
+                className="px-2.5 py-1 text-xs font-medium bg-info-bg text-info-text border border-info-border rounded-sm"
+              >
+                {syncing
+                  ? "Syncing..."
+                  : `Sync ${pendingCount} queued`}
+              </button>
+            )}
+            <span className="hidden md:inline text-xs text-muted">
               {user?.email}
             </span>
             <ThemeToggle />

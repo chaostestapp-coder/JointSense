@@ -6,6 +6,7 @@ import {
   subscribeToScreening,
   updateScreeningReview,
 } from "../services/screeningService";
+import { SCREENING_TESTS } from "../services/transports/screeningSchema";
 import { formatClinicalDateTime } from "../utils/formatters";
 
 export default function ScreeningResultPage() {
@@ -90,9 +91,17 @@ export default function ScreeningResultPage() {
     );
   }
 
-  const flexionPercent = screening.referenceFlexion
-    ? Math.round((screening.flexionDeg / screening.referenceFlexion) * 100)
-    : null;
+  const flexionPercent =
+    screening.flexionDeg != null && screening.referenceFlexion
+      ? Math.round((screening.flexionDeg / screening.referenceFlexion) * 100)
+      : null;
+
+  const summaryHeadline =
+    screening.evaluatedCount != null
+      ? `${screening.flaggedCount ?? 0} of ${screening.evaluatedCount} thresholds flagged`
+      : screening.compositeIndex != null
+        ? `${screening.compositeIndex} / 100`
+        : "—";
 
   return (
     <div className="space-y-6">
@@ -159,14 +168,13 @@ export default function ScreeningResultPage() {
       <section className="bg-surface border border-border rounded-sm divide-y divide-border">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
           <div className="p-4">
-            <div className="text-xs text-secondary">Composite screening index</div>
-            <div className="text-2xl font-semibold text-foreground mt-1">
-              {screening.compositeIndex}{" "}
-              <span className="text-sm font-normal text-muted">/ 100</span>
+            <div className="text-xs text-secondary">Threshold summary</div>
+            <div className="text-lg font-semibold text-foreground mt-1">
+              {summaryHeadline}
             </div>
           </div>
           <div className="p-4">
-            <div className="text-xs text-secondary">Risk classification</div>
+            <div className="text-xs text-secondary">Screening classification</div>
             <div className="mt-1.5">
               <StatusBadge status={screening.riskLevel} />
             </div>
@@ -174,21 +182,86 @@ export default function ScreeningResultPage() {
           <div className="p-4">
             <div className="text-xs text-secondary">Evaluation method</div>
             <div className="text-sm font-medium text-foreground mt-1.5">
-              {screening.analysisSource || "Clinical Baseline Rubric"}
+              {screening.analysisSource || "Threshold Screening Rubric"}
             </div>
           </div>
         </div>
 
-        <div className="p-4">
-          <div className="text-xs text-secondary mb-1">Clinical recommendation</div>
+        <div className="p-4 space-y-2">
+          <div className="text-xs text-secondary">Screening guidance</div>
           <p className="text-sm text-foreground">{screening.recommendation}</p>
+          <p className="text-xs text-muted">
+            JointSense provides threshold-based screening support and is not a
+            medical diagnostic system.{" "}
+            {screening.mlModelIntegrated
+              ? ""
+              : "Automated ML model classification is not yet integrated."}
+          </p>
         </div>
       </section>
+
+      {/* Guided Test Completion Breakdown (when recorded via 3-test workflow) */}
+      {screening.guidedTests && (
+        <section className="bg-surface border border-border rounded-sm">
+          <div className="px-4 py-3 border-b border-border">
+            <h2
+              id="guided-tests-heading"
+              className="text-base font-semibold text-foreground"
+            >
+              Guided protocol summary
+            </h2>
+          </div>
+          <div
+            tabIndex={0}
+            role="region"
+            aria-labelledby="guided-tests-heading"
+            className="clinical-table-region"
+          >
+            <table className="clinical-table">
+              <thead>
+                <tr>
+                  <th scope="col">Test</th>
+                  <th scope="col">Completion</th>
+                  <th scope="col">Timer</th>
+                  <th scope="col">Data source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {SCREENING_TESTS.map((test) => {
+                  const entry = screening.guidedTests?.[test.id];
+                  return (
+                    <tr key={test.id}>
+                      <th scope="row" className="font-medium text-foreground">
+                        {test.name}
+                      </th>
+                      <td>
+                        <StatusBadge
+                          status={entry?.completed ? "Reviewed" : "Pending Review"}
+                        />
+                      </td>
+                      <td className="text-secondary">
+                        {entry?.elapsedSec != null ? `${entry.elapsedSec} s` : "—"}
+                      </td>
+                      <td className="text-secondary">
+                        {entry?.sensorSnapshot?.sourceType ||
+                          "Clinician / Manual"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Measurements Comparison Table */}
       <section className="bg-surface border border-border rounded-sm">
         <div className="px-4 py-3 border-b border-border">
-          <h2 id="measurements-heading" className="text-base font-semibold text-foreground">
+          <h2
+            id="measurements-heading"
+            className="text-base font-semibold text-foreground"
+          >
             Recorded measurements & examination findings
           </h2>
         </div>
@@ -210,51 +283,99 @@ export default function ScreeningResultPage() {
             <tbody>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
+                  10-metre walk speed
+                </th>
+                <td className="font-medium">
+                  {screening.walkSpeedMps != null
+                    ? `${screening.walkSpeedMps} m/s`
+                    : "Not recorded"}
+                </td>
+                <td className="text-secondary">
+                  {screening.walkDurationSec != null
+                    ? `Completed in ${screening.walkDurationSec} s · `
+                    : ""}
+                  Threshold reference: &ge; 1.00 m/s
+                </td>
+              </tr>
+              <tr>
+                <th scope="row" className="font-medium text-foreground">
+                  5x Sit-to-Stand time
+                </th>
+                <td className="font-medium">
+                  {screening.sitToStandSec != null
+                    ? `${screening.sitToStandSec} s`
+                    : "Not recorded"}
+                </td>
+                <td className="text-secondary">Threshold reference: &le; 15.0 s</td>
+              </tr>
+              <tr>
+                <th scope="row" className="font-medium text-foreground">
                   Active flexion ROM
                 </th>
-                <td className="font-medium">{screening.flexionDeg}°</td>
+                <td className="font-medium">
+                  {screening.flexionDeg != null
+                    ? `${screening.flexionDeg}°`
+                    : "Not recorded"}
+                </td>
                 <td className="text-secondary">
                   Reference baseline: {screening.referenceFlexion || 135}°
                   {flexionPercent !== null ? ` (${flexionPercent}% of baseline)` : ""}
-                  {screening.contralateralFlexionDeg != null
-                    ? ` · Contralateral: ${screening.contralateralFlexionDeg}°`
-                    : ""}
                 </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
                   Extension deficit
                 </th>
-                <td>{screening.extensionDeficitDeg}°</td>
+                <td>
+                  {screening.extensionDeficitDeg != null
+                    ? `${screening.extensionDeficitDeg}°`
+                    : "Not recorded"}
+                </td>
                 <td className="text-secondary">Target: 0° full extension</td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
                   Pain score (VAS)
                 </th>
-                <td>{screening.painScore} / 10</td>
-                <td className="text-secondary">Patient-reported visual analog score</td>
+                <td>
+                  {screening.painScore != null
+                    ? `${screening.painScore} / 10`
+                    : "Not recorded"}
+                </td>
+                <td className="text-secondary">
+                  Patient-reported visual analog score
+                </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
                   Morning stiffness
                 </th>
-                <td>{screening.morningStiffnessMin} minutes</td>
-                <td className="text-secondary">Duration prior to functional loosening</td>
+                <td>
+                  {screening.morningStiffnessMin != null
+                    ? `${screening.morningStiffnessMin} minutes`
+                    : "Not recorded"}
+                </td>
+                <td className="text-secondary">
+                  Duration prior to functional loosening
+                </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
                   Effusion / Swelling
                 </th>
                 <td>{screening.swellingPresent ? "Present" : "Absent"}</td>
-                <td className="text-secondary">Physical palpation and visual check</td>
+                <td className="text-secondary">
+                  Physical palpation and visual check
+                </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
                   Crepitus
                 </th>
                 <td>{screening.crepitusPresent ? "Present" : "Absent"}</td>
-                <td className="text-secondary">During passive joint articulation</td>
+                <td className="text-secondary">
+                  During passive or active joint articulation
+                </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">

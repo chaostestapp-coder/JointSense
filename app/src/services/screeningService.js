@@ -1,17 +1,23 @@
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
-  increment,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import api from "../config/api";
 import { db, isFirebaseConfigured } from "../config/firebase";
+import {
+  generateClientMutationId,
+  getPendingScreenings,
+  queueOfflineScreening,
+  removePendingScreening,
+  updateQueuedScreeningStatus,
+} from "./offlineSyncService";
 
 const SCREENINGS_COLLECTION = "screenings";
 const PATIENTS_COLLECTION = "patients";
@@ -39,63 +45,155 @@ function sortByNewest(records) {
   });
 }
 
+/**
+ * Explicit, documented threshold-based screening rubric (no fabricated ML probabilities).
+ * Evaluates only measurements that were actually provided.
+ */
 export function evaluateClinicalScreening(measurements) {
-  const painScore = Number(measurements.painScore) || 0;
-  const flexionDeg = Number(measurements.flexionDeg) || 0;
-  const extensionDeficitDeg = Number(measurements.extensionDeficitDeg) || 0;
-  const morningStiffnessMin = Number(measurements.morningStiffnessMin) || 0;
+  const jointType = measurements.jointType || "Knee";
   const referenceFlexion =
-    measurements.jointType === "Shoulder"
+    jointType === "Shoulder"
       ? 165
-      : measurements.jointType === "Hip"
+      : jointType === "Hip"
         ? 120
-        : measurements.jointType === "Ankle"
+        : jointType === "Ankle"
           ? 45
           : 135;
 
-  const flexionRatio = referenceFlexion > 0 ? flexionDeg / referenceFlexion : 1;
+  const thresholds = [];
+  let availableMetricsCount = 0;
 
-  let points = 0;
-  if (painScore >= 7) points += 3;
-  else if (painScore >= 4) points += 2;
-  else if (painScore >= 2) points += 1;
+  const walkSpeed =
+    measurements.walkSpeedMps !== "" && measurements.walkSpeedMps != null
+      ? Number(measurements.walkSpeedMps)
+      : null;
+  if (walkSpeed !== null && !Number.isNaN(walkSpeed)) {
+    availableMetricsCount += 1;
+    thresholds.push({
+      metric: "10m Walk Speed",
+      value: `${walkSpeed.toFixed(2)} m/s`,
+      threshold: ">= 1.00 m/s",
+      flagged: walkSpeed < 1.0,
+    });
+  }
 
-  if (flexionRatio < 0.65) points += 3;
-  else if (flexionRatio < 0.82) points += 2;
-  else if (flexionRatio < 0.92) points += 1;
+  const sitStandSec =
+    measurements.sitToStandSec !== "" && measurements.sitToStandSec != null
+      ? Number(measurements.sitToStandSec)
+      : null;
+  if (sitStandSec !== null && !Number.isNaN(sitStandSec)) {
+    availableMetricsCount += 1;
+    thresholds.push({
+      metric: "5x Sit-to-Stand Time",
+      value: `${sitStandSec.toFixed(1)} s`,
+      threshold: "<= 15.0 s",
+      flagged: sitStandSec > 15.0,
+    });
+  }
 
-  if (extensionDeficitDeg >= 10) points += 2;
-  else if (extensionDeficitDeg >= 5) points += 1;
+  const flexionDeg =
+    measurements.flexionDeg !== "" && measurements.flexionDeg != null
+      ? Number(measurements.flexionDeg)
+      : null;
+  if (flexionDeg !== null && !Number.isNaN(flexionDeg)) {
+    availableMetricsCount += 1;
+    const flexionThreshold = jointType === "Knee" ? 110 : Math.round(referenceFlexion * 0.8);
+    thresholds.push({
+      metric: "Active Flexion ROM",
+      value: `${flexionDeg}°`,
+      threshold: `>= ${flexionThreshold}°`,
+      flagged: flexionDeg < flexionThreshold,
+    });
+  }
 
-  if (morningStiffnessMin >= 45) points += 2;
-  else if (morningStiffnessMin >= 20) points += 1;
+  const extensionDeficitDeg =
+    measurements.extensionDeficitDeg !== "" &&
+    measurements.extensionDeficitDeg != null
+      ? Number(measurements.extensionDeficitDeg)
+      : null;
+  if (extensionDeficitDeg !== null && !Number.isNaN(extensionDeficitDeg)) {
+    availableMetricsCount += 1;
+    thresholds.push({
+      metric: "Extension Deficit",
+      value: `${extensionDeficitDeg}°`,
+      threshold: "< 10°",
+      flagged: extensionDeficitDeg >= 10,
+    });
+  }
 
-  if (measurements.swellingPresent) points += 1;
-  if (measurements.crepitusPresent) points += 1;
-  if (measurements.instabilityReported) points += 2;
+  const painScore =
+    measurements.painScore !== "" && measurements.painScore != null
+      ? Number(measurements.painScore)
+      : null;
+  if (painScore !== null && !Number.isNaN(painScore)) {
+    availableMetricsCount += 1;
+    thresholds.push({
+      metric: "Pain Score (VAS)",
+      value: `${painScore}/10`,
+      threshold: "< 5/10",
+      flagged: painScore >= 5,
+    });
+  }
 
-  const compositeIndex = Math.min(100, Math.round((points / 14) * 100));
+  const morningStiffnessMin =
+    measurements.morningStiffnessMin !== "" &&
+    measurements.morningStiffnessMin != null
+      ? Number(measurements.morningStiffnessMin)
+      : null;
+  if (morningStiffnessMin !== null && !Number.isNaN(morningStiffnessMin)) {
+    availableMetricsCount += 1;
+    thresholds.push({
+      metric: "Morning Stiffness",
+      value: `${morningStiffnessMin} min`,
+      threshold: "< 30 min",
+      flagged: morningStiffnessMin >= 30,
+    });
+  }
+
+  const symptomFlags = [
+    measurements.swellingPresent ? "Effusion / swelling" : null,
+    measurements.crepitusPresent ? "Crepitus" : null,
+    measurements.instabilityReported ? "Instability" : null,
+  ].filter(Boolean);
+
+  if (symptomFlags.length > 0) {
+    thresholds.push({
+      metric: "Physical Exam Signs",
+      value: symptomFlags.join(", "),
+      threshold: "Absent",
+      flagged: symptomFlags.length >= 2 || Boolean(measurements.instabilityReported),
+    });
+  }
+
+  const flaggedCount = thresholds.filter((item) => item.flagged).length;
 
   let riskLevel = "Normal";
   let summaryRecommendation =
-    "Measurements fall within expected functional baseline. Continue routine self-monitoring and standard follow-up.";
+    "Recorded screening thresholds are within expected functional limits. Continue routine clinical follow-up as indicated.";
 
-  if (compositeIndex >= 60) {
+  if (availableMetricsCount === 0 && symptomFlags.length === 0) {
+    riskLevel = "Pending Review";
+    summaryRecommendation =
+      "No quantitative measurements recorded yet. Complete the guided tests or enter clinical measurements to evaluate screening thresholds.";
+  } else if (flaggedCount >= 3 || (painScore !== null && painScore >= 7)) {
     riskLevel = "Elevated Risk";
     summaryRecommendation =
-      "Significant range-of-motion limitation or symptom burden observed. Recommend diagnostic imaging correlation and specialist physical exam.";
-  } else if (compositeIndex >= 30) {
+      "Multiple functional or symptomatic screening thresholds exceeded. Consider clinical examination and imaging correlation. (Screening aid only; not a diagnostic result.)";
+  } else if (flaggedCount >= 1) {
     riskLevel = "Monitor";
     summaryRecommendation =
-      "Moderate mechanical or symptomatic indicators present. Schedule targeted physiotherapy assessment and re-screen in 4–6 weeks.";
+      "One or more screening thresholds flagged. Recommend targeted physiotherapy review and repeat screening at follow-up. (Screening aid only; not a diagnostic result.)";
   }
 
   return {
-    compositeIndex,
     riskLevel,
+    flaggedCount,
+    evaluatedCount: thresholds.length,
+    thresholds,
     referenceFlexion,
     summaryRecommendation,
-    source: "Clinical Baseline Rubric",
+    source: "Threshold Screening Rubric (v1 — Pre-ML)",
+    mlModelIntegrated: false,
   };
 }
 
@@ -192,37 +290,83 @@ export async function getScreeningById(screeningId) {
   return { id: snapshot.id, ...snapshot.data() };
 }
 
+/**
+ * Strips any synthetic demonstration telemetry so demo values can never be saved
+ * into Firestore or offline storage as real patient measurements.
+ */
+function sanitizeTestResultsForStorage(tests = {}) {
+  const sanitized = {};
+  Object.entries(tests).forEach(([testId, entry]) => {
+    if (!entry) return;
+    const isDemo = Boolean(entry.telemetry?.isDemoData);
+    sanitized[testId] = {
+      completed: Boolean(entry.completed),
+      elapsedSec:
+        entry.elapsedSec != null ? Number(entry.elapsedSec) : null,
+      notes: entry.notes?.trim() || "",
+      manualValues: entry.manualValues || {},
+      sensorSnapshot:
+        !isDemo &&
+        entry.telemetry?.sourceType === "firebase_rtdb" &&
+        entry.telemetry?.timing?.receivedAtMs
+          ? {
+              sourceType: entry.telemetry.sourceType,
+              rtdbPath: entry.telemetry.rtdbPath || null,
+              isStaleAtCapture: Boolean(entry.telemetry.isStale),
+              processed: entry.telemetry.processed || null,
+              rawImu: entry.telemetry.rawImu || null,
+              timing: entry.telemetry.timing || null,
+            }
+          : null,
+      excludedDemoPreview: isDemo,
+    };
+  });
+  return sanitized;
+}
+
 export async function createScreening(doctorId, screeningData) {
   ensureFirestore();
 
+  const clientMutationId =
+    screeningData.clientMutationId || generateClientMutationId();
   const baselineAssessment = evaluateClinicalScreening(screeningData);
   const assessment = screeningData.externalAnalysis || baselineAssessment;
 
+  const toNumberOrNull = (val) =>
+    val !== "" && val != null && !Number.isNaN(Number(val)) ? Number(val) : null;
+
   const payload = {
+    clientMutationId,
     doctorId,
     patientId: screeningData.patientId,
     patientName: screeningData.patientName,
     patientMrn: screeningData.patientMrn,
-    jointType: screeningData.jointType,
-    side: screeningData.side,
-    painScore: Number(screeningData.painScore),
-    flexionDeg: Number(screeningData.flexionDeg),
-    extensionDeficitDeg: Number(screeningData.extensionDeficitDeg),
-    contralateralFlexionDeg:
-      screeningData.contralateralFlexionDeg !== ""
-        ? Number(screeningData.contralateralFlexionDeg)
-        : null,
-    morningStiffnessMin: Number(screeningData.morningStiffnessMin),
+    jointType: screeningData.jointType || "Knee",
+    side: screeningData.side || "Right",
+    painScore: toNumberOrNull(screeningData.painScore),
+    flexionDeg: toNumberOrNull(screeningData.flexionDeg),
+    extensionDeficitDeg: toNumberOrNull(screeningData.extensionDeficitDeg),
+    contralateralFlexionDeg: toNumberOrNull(screeningData.contralateralFlexionDeg),
+    morningStiffnessMin: toNumberOrNull(screeningData.morningStiffnessMin),
+    walkSpeedMps: toNumberOrNull(screeningData.walkSpeedMps),
+    walkDurationSec: toNumberOrNull(screeningData.walkDurationSec),
+    sitToStandSec: toNumberOrNull(screeningData.sitToStandSec),
     swellingPresent: Boolean(screeningData.swellingPresent),
     crepitusPresent: Boolean(screeningData.crepitusPresent),
     instabilityReported: Boolean(screeningData.instabilityReported),
     gaitStatus: screeningData.gaitStatus || "Unassisted",
     clinicalObservations: screeningData.clinicalObservations?.trim() || "",
-    compositeIndex: assessment.compositeIndex,
+    guidedTests: sanitizeTestResultsForStorage(screeningData.guidedTests),
     riskLevel: assessment.riskLevel,
-    referenceFlexion: assessment.referenceFlexion ?? baselineAssessment.referenceFlexion,
+    flaggedCount: assessment.flaggedCount ?? 0,
+    evaluatedCount: assessment.evaluatedCount ?? 0,
+    thresholds: assessment.thresholds || [],
+    referenceFlexion:
+      assessment.referenceFlexion ?? baselineAssessment.referenceFlexion,
     recommendation: assessment.summaryRecommendation,
-    analysisSource: assessment.source || "Clinical Baseline Rubric",
+    analysisSource: assessment.source || "Threshold Screening Rubric (v1 — Pre-ML)",
+    mlModelIntegrated: false,
+    mlAssessment: null,
     reviewStatus: "Pending Review",
     clinicianNotes: "",
     followUpPlan: "",
@@ -230,19 +374,90 @@ export async function createScreening(doctorId, screeningData) {
     updatedAt: serverTimestamp(),
   };
 
-  const docRef = await addDoc(collection(db, SCREENINGS_COLLECTION), payload);
+  // Idempotent transaction prevents duplicates on offline sync retries
+  const screeningRef = doc(db, SCREENINGS_COLLECTION, clientMutationId);
+  await runTransaction(db, async (transaction) => {
+    const existing = await transaction.get(screeningRef);
+    if (existing.exists()) {
+      return;
+    }
+    transaction.set(screeningRef, payload);
 
-  if (screeningData.patientId) {
-    await updateDoc(doc(db, PATIENTS_COLLECTION, screeningData.patientId), {
-      lastScreeningAt: serverTimestamp(),
-      lastRiskLevel: payload.riskLevel,
-      lastJointScreened: `${payload.side} ${payload.jointType}`,
-      screeningCount: increment(1),
-      updatedAt: serverTimestamp(),
-    });
+    if (screeningData.patientId) {
+      const patientRef = doc(db, PATIENTS_COLLECTION, screeningData.patientId);
+      const patientSnap = await transaction.get(patientRef);
+      if (patientSnap.exists()) {
+        const currentCount = Number(patientSnap.data().screeningCount || 0);
+        transaction.update(patientRef, {
+          lastScreeningAt: serverTimestamp(),
+          lastRiskLevel: payload.riskLevel,
+          lastJointScreened: `${payload.side} ${payload.jointType}`,
+          screeningCount: currentCount + 1,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  });
+
+  return clientMutationId;
+}
+
+export async function saveScreeningWithOfflineFallback(doctorId, screeningData) {
+  const isOffline =
+    typeof navigator !== "undefined" && navigator.onLine === false;
+
+  if (isOffline || !isFirebaseConfigured) {
+    const queued = await queueOfflineScreening(doctorId, screeningData);
+    return {
+      mode: "offline_queued",
+      id: queued.clientMutationId,
+    };
   }
 
-  return docRef.id;
+  try {
+    const id = await createScreening(doctorId, screeningData);
+    return { mode: "synced", id };
+  } catch (err) {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const queued = await queueOfflineScreening(doctorId, screeningData);
+      return {
+        mode: "offline_queued",
+        id: queued.clientMutationId,
+      };
+    }
+    throw err;
+  }
+}
+
+export async function syncQueuedScreenings(doctorId) {
+  if (
+    !isFirebaseConfigured ||
+    !db ||
+    !doctorId ||
+    (typeof navigator !== "undefined" && !navigator.onLine)
+  ) {
+    return { synced: 0, failed: 0 };
+  }
+
+  const pending = await getPendingScreenings(doctorId);
+  let synced = 0;
+  let failed = 0;
+
+  for (const item of pending) {
+    try {
+      await createScreening(doctorId, item.payload);
+      await removePendingScreening(item.clientMutationId);
+      synced += 1;
+    } catch (err) {
+      failed += 1;
+      await updateQueuedScreeningStatus(item.clientMutationId, {
+        syncStatus: "failed",
+        lastError: err?.message || "Sync failed",
+      });
+    }
+  }
+
+  return { synced, failed };
 }
 
 export async function updateScreeningReview(screeningId, reviewData) {

@@ -1,24 +1,55 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { Pause, Play, RotateCcw } from "lucide-react";
+import DeviceStatusBar from "../components/screening/DeviceStatusBar";
+import MovementIllustration from "../components/screening/MovementIllustration";
+import ScreeningSummaryStep from "../components/screening/ScreeningSummaryStep";
+import SensorVisualisations from "../components/screening/SensorVisualisations";
+import TestStepper from "../components/screening/TestStepper";
 import { useAuth } from "../context/useAuth";
 import { subscribeToPatients } from "../services/patientService";
 import {
-  createScreening,
   evaluateClinicalScreening,
-  isExternalScreeningApiConfigured,
-  requestExternalScreeningAnalysis,
+  saveScreeningWithOfflineFallback,
 } from "../services/screeningService";
-import StatusBadge from "../components/common/StatusBadge";
+import {
+  createEmptyTestTelemetry,
+  SCREENING_TESTS,
+  TRANSPORT_TYPES,
+} from "../services/transports/screeningSchema";
+import { createScreeningTransport } from "../services/transports/screeningTransport";
 
 const JOINT_OPTIONS = ["Knee", "Hip", "Shoulder", "Ankle"];
 const SIDE_OPTIONS = ["Right", "Left", "Bilateral"];
-const GAIT_OPTIONS = [
-  "Unassisted",
-  "Antalgic / Limp",
-  "Cane / Single Crutch",
-  "Walker / Bilateral Support",
-  "Non-weight Bearing",
-];
+
+function createInitialTestStates() {
+  return {
+    walk_10m: {
+      completed: false,
+      elapsedSec: null,
+      manualValues: { walkDurationSec: "" },
+      telemetry: null,
+    },
+    sit_to_stand_5x: {
+      completed: false,
+      elapsedSec: null,
+      manualValues: { sitToStandSec: "" },
+      telemetry: null,
+    },
+    knee_bend_extend: {
+      completed: false,
+      elapsedSec: null,
+      manualValues: { flexionDeg: "", extensionDeficitDeg: "" },
+      telemetry: null,
+    },
+  };
+}
+
+function formatTimer(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(1).padStart(4, "0");
+  return `${String(mins).padStart(2, "0")}:${secs}`;
+}
 
 export default function ScreeningPage() {
   const { user } = useAuth();
@@ -29,26 +60,43 @@ export default function ScreeningPage() {
   const [patients, setPatients] = useState([]);
   const [loadingPatients, setLoadingPatients] = useState(true);
   const [error, setError] = useState("");
+  const [offlineNotice, setOfflineNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const [patientId, setPatientId] = useState(preselectedPatientId);
   const [jointType, setJointType] = useState("Knee");
   const [side, setSide] = useState("Right");
-  const [gaitStatus, setGaitStatus] = useState("Unassisted");
 
-  const [painScore, setPainScore] = useState("3");
-  const [flexionDeg, setFlexionDeg] = useState("120");
-  const [extensionDeficitDeg, setExtensionDeficitDeg] = useState("0");
-  const [contralateralFlexionDeg, setContralateralFlexionDeg] = useState("");
-  const [morningStiffnessMin, setMorningStiffnessMin] = useState("10");
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [testStates, setTestStates] = useState(createInitialTestStates);
+  const [symptomForm, setSymptomForm] = useState({
+    painScore: "",
+    morningStiffnessMin: "",
+    gaitStatus: "Unassisted",
+    swellingPresent: false,
+    crepitusPresent: false,
+    instabilityReported: false,
+    clinicalObservations: "",
+  });
 
-  const [swellingPresent, setSwellingPresent] = useState(false);
-  const [crepitusPresent, setCrepitusPresent] = useState(false);
-  const [instabilityReported, setInstabilityReported] = useState(false);
-  const [clinicalObservations, setClinicalObservations] = useState("");
+  // Transport abstraction state (default to Wi-Fi + Firebase Realtime Database)
+  const [transportType, setTransportType] = useState(
+    TRANSPORT_TYPES.FIREBASE_RTDB
+  );
+  const adapter = useMemo(
+    () => createScreeningTransport(transportType),
+    [transportType]
+  );
+  const capabilities = useMemo(() => adapter.getCapabilities(), [adapter]);
+  const [telemetry, setTelemetry] = useState(() =>
+    createEmptyTestTelemetry(SCREENING_TESTS[0].id)
+  );
+  const [connectError, setConnectError] = useState("");
 
-  const [externalResult, setExternalResult] = useState(null);
-  const [runningExternal, setRunningExternal] = useState(false);
+  // Stopwatch state for the active test
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const timerStartRef = useRef(0);
 
   useEffect(() => {
     if (!user?.uid) return undefined;
@@ -73,6 +121,50 @@ export default function ScreeningPage() {
     return () => unsubscribe();
   }, [user?.uid, preselectedPatientId]);
 
+  // Manage active hardware/demo transport subscription
+  useEffect(() => {
+    const unsubscribe = adapter.subscribe((snapshot) => {
+      setTelemetry(snapshot);
+      if (snapshot?.testId) {
+        setTestStates((prev) => {
+          const existing = prev[snapshot.testId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [snapshot.testId]: {
+              ...existing,
+              telemetry: snapshot,
+            },
+          };
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      adapter.disconnect().catch(() => {});
+    };
+  }, [adapter]);
+
+  // Keep transport notified when active test changes
+  useEffect(() => {
+    const activeTest = SCREENING_TESTS[activeStepIndex];
+    if (activeTest) {
+      adapter.setActiveTest(activeTest.id);
+    }
+  }, [adapter, activeStepIndex]);
+
+  // Stopwatch interval
+  useEffect(() => {
+    if (!timerRunning) return undefined;
+    const interval = setInterval(() => {
+      setElapsedSec(
+        Number(((Date.now() - timerStartRef.current) / 1000).toFixed(1))
+      );
+    }, 100);
+    return () => clearInterval(interval);
+  }, [timerRunning]);
+
   const selectedPatient = useMemo(
     () => patients.find((p) => p.id === patientId) || null,
     [patients, patientId]
@@ -87,59 +179,172 @@ export default function ScreeningPage() {
     }
   };
 
-  const baselinePreview = useMemo(
-    () =>
-      evaluateClinicalScreening({
-        jointType,
-        painScore,
-        flexionDeg,
-        extensionDeficitDeg,
-        morningStiffnessMin,
-        swellingPresent,
-        crepitusPresent,
-        instabilityReported,
-      }),
-    [
-      jointType,
-      painScore,
-      flexionDeg,
-      extensionDeficitDeg,
-      morningStiffnessMin,
-      swellingPresent,
-      crepitusPresent,
-      instabilityReported,
-    ]
-  );
+  const activeTest = SCREENING_TESTS[activeStepIndex] || null;
+  const isSummaryStep = activeStepIndex >= SCREENING_TESTS.length;
 
-  const handleRunExternalApi = async () => {
-    if (!selectedPatient) {
-      setError("Select a patient before running external analysis.");
-      return;
-    }
-    setError("");
-    setRunningExternal(true);
-    try {
-      const data = await requestExternalScreeningAnalysis({
-        patientId: selectedPatient.id,
-        patientMrn: selectedPatient.mrn,
-        jointType,
-        side,
-        painScore: Number(painScore),
-        flexionDeg: Number(flexionDeg),
-        extensionDeficitDeg: Number(extensionDeficitDeg),
-        morningStiffnessMin: Number(morningStiffnessMin),
-        swellingPresent,
-        crepitusPresent,
-        instabilityReported,
-        gaitStatus,
-      });
-      setExternalResult(data);
-    } catch (err) {
-      setError(err.message || "External screening API request failed.");
-    } finally {
-      setRunningExternal(false);
+  const handleSelectStep = (nextIndex) => {
+    setTimerRunning(false);
+    setActiveStepIndex(nextIndex);
+    const targetTest = SCREENING_TESTS[nextIndex];
+    if (targetTest) {
+      setElapsedSec(testStates[targetTest.id]?.elapsedSec || 0);
     }
   };
+
+  const handleConnectTransport = async () => {
+    setConnectError("");
+    try {
+      await adapter.connect();
+    } catch (err) {
+      setConnectError(err.message || "Unable to connect to wearable device.");
+    }
+  };
+
+  const handleDisconnectTransport = async () => {
+    setConnectError("");
+    await adapter.disconnect();
+  };
+
+  const handleStartTest = async () => {
+    if (!activeTest) return;
+    timerStartRef.current = Date.now() - elapsedSec * 1000;
+    setTimerRunning(true);
+    setConnectError("");
+    try {
+      await adapter.startTest(activeTest.id);
+    } catch (err) {
+      setConnectError(err.message || "Unable to start sensor stream.");
+    }
+  };
+
+  const handlePauseTest = async () => {
+    setTimerRunning(false);
+    await adapter.pauseTest();
+  };
+
+  const handleResetTest = () => {
+    if (!activeTest) return;
+    setTimerRunning(false);
+    timerStartRef.current = 0;
+    setElapsedSec(0);
+    setTestStates((prev) => ({
+      ...prev,
+      [activeTest.id]: {
+        ...prev[activeTest.id],
+        completed: false,
+        elapsedSec: null,
+      },
+    }));
+  };
+
+  const handleManualFieldChange = (testId, field, value) => {
+    setTestStates((prev) => ({
+      ...prev,
+      [testId]: {
+        ...prev[testId],
+        manualValues: {
+          ...prev[testId].manualValues,
+          [field]: value,
+        },
+      },
+    }));
+  };
+
+  const handleCompleteTest = async () => {
+    if (!activeTest) return;
+    setTimerRunning(false);
+    await adapter.completeTest();
+
+    const capturedDuration = elapsedSec > 0 ? Number(elapsedSec.toFixed(1)) : null;
+
+    setTestStates((prev) => {
+      const current = prev[activeTest.id];
+      const nextManual = { ...current.manualValues };
+
+      if (
+        activeTest.id === "walk_10m" &&
+        !nextManual.walkDurationSec &&
+        capturedDuration != null
+      ) {
+        nextManual.walkDurationSec = String(capturedDuration);
+      }
+      if (
+        activeTest.id === "sit_to_stand_5x" &&
+        !nextManual.sitToStandSec &&
+        capturedDuration != null
+      ) {
+        nextManual.sitToStandSec = String(capturedDuration);
+      }
+
+      return {
+        ...prev,
+        [activeTest.id]: {
+          ...current,
+          completed: true,
+          elapsedSec: capturedDuration ?? current.elapsedSec,
+          manualValues: nextManual,
+        },
+      };
+    });
+
+    const nextIndex = activeStepIndex + 1;
+    setActiveStepIndex(nextIndex);
+    const nextTest = SCREENING_TESTS[nextIndex];
+    setElapsedSec(nextTest ? testStates[nextTest.id]?.elapsedSec || 0 : 0);
+  };
+
+  const handleSymptomChange = (field, value) => {
+    setSymptomForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const compiledScreeningData = useMemo(() => {
+    const walkState = testStates.walk_10m;
+    const sitState = testStates.sit_to_stand_5x;
+    const bendState = testStates.knee_bend_extend;
+
+    const walkDurationSec = walkState.manualValues.walkDurationSec;
+    const walkRealProcessed =
+      !walkState.telemetry?.isDemoData && !walkState.telemetry?.isStale
+        ? walkState.telemetry?.processed
+        : null;
+    const walkSpeedMps =
+      walkRealProcessed?.walkingSpeedMs != null
+        ? walkRealProcessed.walkingSpeedMs
+        : walkDurationSec && Number(walkDurationSec) > 0
+          ? Number((10 / Number(walkDurationSec)).toFixed(2))
+          : null;
+
+    const sitToStandSec = sitState.manualValues.sitToStandSec;
+
+    const bendRealProcessed =
+      !bendState.telemetry?.isDemoData && !bendState.telemetry?.isStale
+        ? bendState.telemetry?.processed
+        : null;
+    const flexionDeg =
+      bendState.manualValues.flexionDeg ||
+      (bendRealProcessed?.kneeAngleDeg != null
+        ? String(bendRealProcessed.kneeAngleDeg)
+        : "");
+
+    const extensionDeficitDeg = bendState.manualValues.extensionDeficitDeg;
+
+    return {
+      jointType,
+      side,
+      walkDurationSec,
+      walkSpeedMps,
+      sitToStandSec,
+      flexionDeg,
+      extensionDeficitDeg,
+      ...symptomForm,
+      guidedTests: testStates,
+    };
+  }, [jointType, side, symptomForm, testStates]);
+
+  const thresholdEvaluation = useMemo(
+    () => evaluateClinicalScreening(compiledScreeningData),
+    [compiledScreeningData]
+  );
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -149,44 +354,42 @@ export default function ScreeningPage() {
     }
 
     setError("");
+    setOfflineNotice("");
     setSubmitting(true);
+
     try {
-      const screeningId = await createScreening(user.uid, {
+      const result = await saveScreeningWithOfflineFallback(user.uid, {
         patientId: selectedPatient.id,
         patientName: selectedPatient.fullName,
         patientMrn: selectedPatient.mrn,
-        jointType,
-        side,
-        gaitStatus,
-        painScore,
-        flexionDeg,
-        extensionDeficitDeg,
-        contralateralFlexionDeg,
-        morningStiffnessMin,
-        swellingPresent,
-        crepitusPresent,
-        instabilityReported,
-        clinicalObservations,
-        externalAnalysis: externalResult,
+        ...compiledScreeningData,
       });
 
-      navigate(`/screenings/${screeningId}`);
+      if (result.mode === "offline_queued") {
+        setOfflineNotice(
+          "You are currently offline. This screening has been safely queued in local IndexedDB storage and will sync automatically when connectivity returns."
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      navigate(`/screenings/${result.id}`);
     } catch (err) {
-      setError(err.message || "Unable to save joint screening.");
+      setError(err.message || "Unable to save screening record.");
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="pb-4 border-b border-border flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">
-            Joint screening assessment
+            Guided knee screening workflow
           </h1>
           <p className="text-sm text-secondary mt-1">
-            Record goniometric range of motion, pain score, and physical
-            examination findings.
+            Three-part functional assessment with wearable telemetry support and
+            threshold-based clinical review.
           </p>
         </div>
         <Link
@@ -206,14 +409,26 @@ export default function ScreeningPage() {
         </div>
       )}
 
+      {offlineNotice && (
+        <div
+          role="status"
+          className="px-4 py-3 text-sm bg-warning-bg text-warning-text border border-warning-border rounded-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+        >
+          <span>{offlineNotice}</span>
+          <Link to="/" className="font-medium underline shrink-0">
+            Return to dashboard
+          </Link>
+        </div>
+      )}
+
       {!loadingPatients && patients.length === 0 ? (
         <div className="bg-surface border border-border rounded-sm p-6 space-y-3">
           <h2 className="text-base font-semibold text-foreground">
             No registered patients available
           </h2>
           <p className="text-sm text-secondary">
-            Register a patient in Patient Management before recording a joint
-            screening.
+            Register a patient in Patient Management before starting a guided
+            screening session.
           </p>
           <Link
             to="/patients"
@@ -223,32 +438,24 @@ export default function ScreeningPage() {
           </Link>
         </div>
       ) : (
-        <form
-          onSubmit={handleSubmit}
-          className="bg-surface border border-border rounded-sm divide-y divide-border"
-        >
-          {/* Section 1: Patient & Joint Context */}
-          <div className="p-5 space-y-4">
-            <h2 className="text-base font-semibold text-foreground">
-              1. Patient & joint selection
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="lg:col-span-2">
+        <>
+          {/* Step 1: Patient & Joint Context */}
+          <section className="bg-surface border border-border rounded-sm p-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3.5 items-end">
+              <div className="md:col-span-2">
                 <label
                   htmlFor="screening-patient"
-                  className="block text-sm font-medium text-foreground mb-1"
+                  className="block text-xs font-medium text-secondary mb-1"
                 >
                   Patient <span aria-hidden="true">*</span>
                 </label>
                 <select
                   id="screening-patient"
-                  name="patientId"
-                  required
                   value={patientId}
                   onChange={(e) => handlePatientChange(e.target.value)}
                   className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
                 >
-                  <option value="">Select a patient...</option>
+                  <option value="">Select a registered patient...</option>
                   {patients.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.fullName} ({p.mrn})
@@ -260,14 +467,12 @@ export default function ScreeningPage() {
               <div>
                 <label
                   htmlFor="screening-joint"
-                  className="block text-sm font-medium text-foreground mb-1"
+                  className="block text-xs font-medium text-secondary mb-1"
                 >
-                  Joint <span aria-hidden="true">*</span>
+                  Target joint
                 </label>
                 <select
                   id="screening-joint"
-                  name="jointType"
-                  required
                   value={jointType}
                   onChange={(e) => setJointType(e.target.value)}
                   className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
@@ -283,14 +488,12 @@ export default function ScreeningPage() {
               <div>
                 <label
                   htmlFor="screening-side"
-                  className="block text-sm font-medium text-foreground mb-1"
+                  className="block text-xs font-medium text-secondary mb-1"
                 >
-                  Laterality <span aria-hidden="true">*</span>
+                  Laterality
                 </label>
                 <select
                   id="screening-side"
-                  name="side"
-                  required
                   value={side}
                   onChange={(e) => setSide(e.target.value)}
                   className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
@@ -303,243 +506,258 @@ export default function ScreeningPage() {
                 </select>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Section 2: Objective Measurements */}
-          <div className="p-5 space-y-4">
-            <h2 className="text-base font-semibold text-foreground">
-              2. Range of motion & symptom metrics
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div>
-                <label
-                  htmlFor="screening-flexion"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Active flexion (deg) <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  id="screening-flexion"
-                  name="flexionDeg"
-                  type="number"
-                  min={0}
-                  max={180}
-                  required
-                  value={flexionDeg}
-                  onChange={(e) => setFlexionDeg(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
+          {/* Wearable Transport & Sensor Status */}
+          <DeviceStatusBar
+            transportType={transportType}
+            onChangeTransport={(nextType) => {
+              setConnectError("");
+              setTransportType(nextType);
+            }}
+            telemetry={telemetry}
+            capabilities={capabilities}
+            onConnect={handleConnectTransport}
+            onDisconnect={handleDisconnectTransport}
+            connectError={connectError}
+          />
+
+          {/* 3-Test + Summary Stepper */}
+          <TestStepper
+            activeStepIndex={activeStepIndex}
+            completedTests={testStates}
+            onSelectStep={handleSelectStep}
+          />
+
+          {/* Active Guided Test Workspace or Summary Step */}
+          {!isSummaryStep && activeTest ? (
+            <section className="bg-surface border border-border rounded-sm divide-y divide-border">
+              {/* Test Header & Instructions + Visual Demonstration */}
+              <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div className="lg:col-span-7 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-lg font-semibold text-foreground">
+                      Test {activeTest.order}: {activeTest.name}
+                    </h2>
+                    <span className="text-xs font-medium text-secondary">
+                      {testStates[activeTest.id]?.completed
+                        ? "Completed"
+                        : "In progress"}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-secondary">{activeTest.purpose}</p>
+
+                  <div className="pt-1">
+                    <h3 className="text-xs font-semibold text-foreground mb-1.5">
+                      Instructions for the patient
+                    </h3>
+                    <ol className="list-decimal list-inside space-y-1 text-sm text-foreground">
+                      {activeTest.patientInstructions.map((step, idx) => (
+                        <li key={idx}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  {/* Test Controls & Stopwatch */}
+                  <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!timerRunning ? (
+                        <button
+                          type="button"
+                          onClick={handleStartTest}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
+                        >
+                          <Play size={14} strokeWidth={1.75} aria-hidden="true" />
+                          <span>Start test</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handlePauseTest}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
+                        >
+                          <Pause size={14} strokeWidth={1.75} aria-hidden="true" />
+                          <span>Pause</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleResetTest}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-secondary hover:text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+                      >
+                        <RotateCcw size={14} strokeWidth={1.75} aria-hidden="true" />
+                        <span>Reset</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-mono font-semibold text-foreground px-2.5 py-1 bg-surface-muted border border-border rounded-sm">
+                        {formatTimer(elapsedSec)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCompleteTest}
+                        className="px-4 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-muted border border-border rounded-sm"
+                      >
+                        {activeStepIndex === SCREENING_TESTS.length - 1
+                          ? "Complete & review summary"
+                          : "Complete & next test"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5">
+                  <MovementIllustration testId={activeTest.id} />
+                </div>
+              </div>
+
+              {/* Manual / Clinician Reference Entry for Active Test */}
+              <div className="px-5 py-3.5 bg-surface-muted/30 flex flex-col sm:flex-row sm:items-end gap-4">
+                {activeTest.id === "walk_10m" && (
+                  <div className="w-full sm:w-64">
+                    <label
+                      htmlFor="manual-walk-sec"
+                      className="block text-xs font-medium text-secondary mb-1"
+                    >
+                      Recorded 10 m walk time (seconds)
+                    </label>
+                    <input
+                      id="manual-walk-sec"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="180"
+                      value={testStates.walk_10m.manualValues.walkDurationSec}
+                      onChange={(e) =>
+                        handleManualFieldChange(
+                          "walk_10m",
+                          "walkDurationSec",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Auto-fills on Complete or enter"
+                      className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                    />
+                  </div>
+                )}
+
+                {activeTest.id === "sit_to_stand_5x" && (
+                  <div className="w-full sm:w-64">
+                    <label
+                      htmlFor="manual-sts-sec"
+                      className="block text-xs font-medium text-secondary mb-1"
+                    >
+                      Recorded 5x sit-to-stand time (seconds)
+                    </label>
+                    <input
+                      id="manual-sts-sec"
+                      type="number"
+                      step="0.1"
+                      min="1"
+                      max="180"
+                      value={testStates.sit_to_stand_5x.manualValues.sitToStandSec}
+                      onChange={(e) =>
+                        handleManualFieldChange(
+                          "sit_to_stand_5x",
+                          "sitToStandSec",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Auto-fills on Complete or enter"
+                      className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                    />
+                  </div>
+                )}
+
+                {activeTest.id === "knee_bend_extend" && (
+                  <>
+                    <div className="w-full sm:w-52">
+                      <label
+                        htmlFor="manual-flexion-deg"
+                        className="block text-xs font-medium text-secondary mb-1"
+                      >
+                        Peak knee flexion (degrees)
+                      </label>
+                      <input
+                        id="manual-flexion-deg"
+                        type="number"
+                        min="0"
+                        max="180"
+                        value={testStates.knee_bend_extend.manualValues.flexionDeg}
+                        onChange={(e) =>
+                          handleManualFieldChange(
+                            "knee_bend_extend",
+                            "flexionDeg",
+                            e.target.value
+                          )
+                        }
+                        placeholder="e.g., 118"
+                        className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                      />
+                    </div>
+                    <div className="w-full sm:w-52">
+                      <label
+                        htmlFor="manual-ext-deg"
+                        className="block text-xs font-medium text-secondary mb-1"
+                      >
+                        Extension deficit (degrees)
+                      </label>
+                      <input
+                        id="manual-ext-deg"
+                        type="number"
+                        min="0"
+                        max="90"
+                        value={
+                          testStates.knee_bend_extend.manualValues
+                            .extensionDeficitDeg
+                        }
+                        onChange={(e) =>
+                          handleManualFieldChange(
+                            "knee_bend_extend",
+                            "extensionDeficitDeg",
+                            e.target.value
+                          )
+                        }
+                        placeholder="0 = full extension"
+                        className="w-full px-3 py-1.5 bg-surface border border-border rounded-sm text-sm text-foreground"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <p className="text-xs text-muted">
+                  Clinician-entered measurements are saved directly to the
+                  patient&apos;s screening record; demo telemetry is excluded.
+                </p>
+              </div>
+
+              {/* Sensor Visualisations Area (Relevant to Active Test Only) */}
+              <div className="p-5">
+                <SensorVisualisations
+                  test={activeTest}
+                  telemetry={telemetry}
+                  manualValues={testStates[activeTest.id]?.manualValues}
                 />
-                <span className="block text-xs text-muted mt-1">
-                  Ref: {baselinePreview.referenceFlexion}°
-                </span>
               </div>
-
-              <div>
-                <label
-                  htmlFor="screening-extension"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Extension deficit (deg) <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  id="screening-extension"
-                  name="extensionDeficitDeg"
-                  type="number"
-                  min={0}
-                  max={90}
-                  required
-                  value={extensionDeficitDeg}
-                  onChange={(e) => setExtensionDeficitDeg(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="screening-contralateral"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Contralateral flexion (deg)
-                </label>
-                <input
-                  id="screening-contralateral"
-                  name="contralateralFlexionDeg"
-                  type="number"
-                  min={0}
-                  max={180}
-                  value={contralateralFlexionDeg}
-                  onChange={(e) => setContralateralFlexionDeg(e.target.value)}
-                  placeholder="Optional"
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="screening-pain"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Pain VAS (0–10) <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  id="screening-pain"
-                  name="painScore"
-                  type="number"
-                  min={0}
-                  max={10}
-                  required
-                  value={painScore}
-                  onChange={(e) => setPainScore(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="screening-stiffness"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Morning stiffness (min) <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  id="screening-stiffness"
-                  name="morningStiffnessMin"
-                  type="number"
-                  min={0}
-                  max={360}
-                  required
-                  value={morningStiffnessMin}
-                  onChange={(e) => setMorningStiffnessMin(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Physical Examination & Notes */}
-          <div className="p-5 space-y-4">
-            <h2 className="text-base font-semibold text-foreground">
-              3. Physical examination & functional status
-            </h2>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <fieldset className="space-y-2.5">
-                <legend className="text-sm font-medium text-foreground mb-1">
-                  Clinical findings observed
-                </legend>
-
-                <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={swellingPresent}
-                    onChange={(e) => setSwellingPresent(e.target.checked)}
-                    className="w-4 h-4 accent-accent"
-                  />
-                  <span>Joint effusion / visible swelling present</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={crepitusPresent}
-                    onChange={(e) => setCrepitusPresent(e.target.checked)}
-                    className="w-4 h-4 accent-accent"
-                  />
-                  <span>Palpable or audible crepitus during passive ROM</span>
-                </label>
-
-                <label className="flex items-center gap-2.5 text-sm text-foreground cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={instabilityReported}
-                    onChange={(e) => setInstabilityReported(e.target.checked)}
-                    className="w-4 h-4 accent-accent"
-                  />
-                  <span>Patient reports instability or giving-way episodes</span>
-                </label>
-              </fieldset>
-
-              <div>
-                <label
-                  htmlFor="screening-gait"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Gait / weight-bearing status
-                </label>
-                <select
-                  id="screening-gait"
-                  name="gaitStatus"
-                  value={gaitStatus}
-                  onChange={(e) => setGaitStatus(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-                >
-                  {GAIT_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="screening-observations"
-                className="block text-sm font-medium text-foreground mb-1"
-              >
-                Examiner observations
-              </label>
-              <textarea
-                id="screening-observations"
-                name="clinicalObservations"
-                rows={3}
-                value={clinicalObservations}
-                onChange={(e) => setClinicalObservations(e.target.value)}
-                placeholder="Joint line tenderness, end-feel quality, ligamentous laxity notes..."
-                className="w-full px-3 py-2 bg-surface border border-border rounded-sm text-sm text-foreground"
-              />
-            </div>
-          </div>
-
-          {/* Section 4: Assessment Preview & Save */}
-          <div className="p-5 bg-surface-muted/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5">
-                <span className="text-sm font-medium text-foreground">
-                  Calculated baseline index:{" "}
-                  {(externalResult || baselinePreview).compositeIndex}/100
-                </span>
-                <StatusBadge
-                  status={(externalResult || baselinePreview).riskLevel}
-                />
-              </div>
-              <p className="text-xs text-secondary max-w-2xl">
-                {(externalResult || baselinePreview).summaryRecommendation}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              {isExternalScreeningApiConfigured && (
-                <button
-                  type="button"
-                  disabled={runningExternal}
-                  onClick={handleRunExternalApi}
-                  className="px-3.5 py-2 text-sm font-medium text-foreground bg-surface hover:bg-surface-hover border border-border rounded-sm"
-                >
-                  {runningExternal ? "Analyzing..." : "Run external API analysis"}
-                </button>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-accent-foreground rounded-sm"
-              >
-                {submitting ? "Saving screening..." : "Save & open result"}
-              </button>
-            </div>
-          </div>
-        </form>
+            </section>
+          ) : (
+            <ScreeningSummaryStep
+              selectedPatient={selectedPatient}
+              jointType={jointType}
+              side={side}
+              testStates={testStates}
+              symptomForm={symptomForm}
+              onSymptomChange={handleSymptomChange}
+              thresholdEvaluation={thresholdEvaluation}
+              submitting={submitting}
+              onBack={() => handleSelectStep(SCREENING_TESTS.length - 1)}
+              onSubmit={handleSubmit}
+            />
+          )}
+        </>
       )}
     </div>
   );

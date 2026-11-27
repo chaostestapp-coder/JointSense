@@ -266,7 +266,7 @@ export default function PatientDetailsPage() {
                 <th scope="col">Active flexion</th>
                 <th scope="col">Ext. deficit</th>
                 <th scope="col">Pain (VAS)</th>
-                <th scope="col">Index</th>
+                <th scope="col">Flags</th>
                 <th scope="col">Risk level</th>
                 <th scope="col">Review status</th>
                 <th scope="col" className="text-right">
@@ -290,10 +290,24 @@ export default function PatientDetailsPage() {
                     <td className="whitespace-nowrap">
                       {item.side} {item.jointType}
                     </td>
-                    <td>{item.flexionDeg}°</td>
-                    <td>{item.extensionDeficitDeg}°</td>
-                    <td>{item.painScore}/10</td>
-                    <td className="font-medium">{item.compositeIndex}/100</td>
+                    <td>
+                      {item.flexionDeg != null ? `${item.flexionDeg}°` : "—"}
+                    </td>
+                    <td>
+                      {item.extensionDeficitDeg != null
+                        ? `${item.extensionDeficitDeg}°`
+                        : "—"}
+                    </td>
+                    <td>
+                      {item.painScore != null ? `${item.painScore}/10` : "—"}
+                    </td>
+                    <td className="font-medium">
+                      {item.evaluatedCount != null
+                        ? `${item.flaggedCount ?? 0}/${item.evaluatedCount}`
+                        : item.compositeIndex != null
+                          ? `${item.compositeIndex}/100`
+                          : "—"}
+                    </td>
                     <td>
                       <StatusBadge status={item.riskLevel} />
                     </td>

@@ -197,7 +197,7 @@ export default function DashboardPage() {
                 <th scope="col">Joint</th>
                 <th scope="col">Flexion</th>
                 <th scope="col">Pain</th>
-                <th scope="col">Index</th>
+                <th scope="col">Flags</th>
                 <th scope="col">Risk level</th>
                 <th scope="col">Review status</th>
                 <th scope="col" className="text-right">
@@ -242,10 +242,18 @@ export default function DashboardPage() {
                     <td className="whitespace-nowrap">
                       {item.side} {item.jointType}
                     </td>
-                    <td className="whitespace-nowrap">{item.flexionDeg}°</td>
-                    <td className="whitespace-nowrap">{item.painScore}/10</td>
+                    <td className="whitespace-nowrap">
+                      {item.flexionDeg != null ? `${item.flexionDeg}°` : "—"}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {item.painScore != null ? `${item.painScore}/10` : "—"}
+                    </td>
                     <td className="whitespace-nowrap font-medium">
-                      {item.compositeIndex}/100
+                      {item.evaluatedCount != null
+                        ? `${item.flaggedCount ?? 0}/${item.evaluatedCount}`
+                        : item.compositeIndex != null
+                          ? `${item.compositeIndex}/100`
+                          : "—"}
                     </td>
                     <td>
                       <StatusBadge status={item.riskLevel} />

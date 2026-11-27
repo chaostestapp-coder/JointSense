@@ -270,3 +270,75 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
     color: #000000 !important;
   }
 }
+
+/* Instructional movement demonstration animations (opt-in via Play + reduced-motion safe) */
+@keyframes js-walk-track {
+  0% {
+    transform: translateX(0px);
+  }
+  100% {
+    transform: translateX(170px);
+  }
+}
+
+@keyframes js-stride-a {
+  0%,
+  100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+}
+
+@keyframes js-stride-b {
+  0%,
+  100% {
+    transform: rotate(18deg);
+  }
+  50% {
+    transform: rotate(-18deg);
+  }
+}
+
+@keyframes js-sit-stand-torso {
+  0%,
+  15%,
+  100% {
+    transform: translate(0px, 24px);
+  }
+  50%,
+  65% {
+    transform: translate(18px, 0px);
+  }
+}
+
+@keyframes js-knee-shin {
+  0%,
+  15%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50%,
+  65% {
+    transform: rotate(-72deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .demo-playing .anim-walk-figure {
+    animation: js-walk-track 4.2s linear infinite;
+  }
+  .demo-playing .anim-leg-a {
+    animation: js-stride-a 0.9s ease-in-out infinite;
+  }
+  .demo-playing .anim-leg-b {
+    animation: js-stride-b 0.9s ease-in-out infinite;
+  }
+  .demo-playing .anim-sit-stand {
+    animation: js-sit-stand-torso 3.2s ease-in-out infinite;
+  }
+  .demo-playing .anim-knee-shin {
+    animation: js-knee-shin 3.2s ease-in-out infinite;
+  }
+}
