@@ -455,27 +455,31 @@ export async function createScreening(doctorId, screeningData) {
   };
 
   // Idempotent transaction prevents duplicates on offline sync retries
+  // Firestore requires all transaction.get() reads before any writes.
   const screeningRef = doc(db, SCREENINGS_COLLECTION, clientMutationId);
+  const patientRef = screeningData.patientId
+    ? doc(db, PATIENTS_COLLECTION, screeningData.patientId)
+    : null;
+
   await runTransaction(db, async (transaction) => {
     const existing = await transaction.get(screeningRef);
     if (existing.exists()) {
       return;
     }
+
+    const patientSnap = patientRef ? await transaction.get(patientRef) : null;
+
     transaction.set(screeningRef, payload);
 
-    if (screeningData.patientId) {
-      const patientRef = doc(db, PATIENTS_COLLECTION, screeningData.patientId);
-      const patientSnap = await transaction.get(patientRef);
-      if (patientSnap.exists()) {
-        const currentCount = Number(patientSnap.data().screeningCount || 0);
-        transaction.update(patientRef, {
-          lastScreeningAt: serverTimestamp(),
-          lastRiskLevel: payload.riskLevel,
-          lastJointScreened: `${payload.side} ${payload.jointType}`,
-          screeningCount: currentCount + 1,
-          updatedAt: serverTimestamp(),
-        });
-      }
+    if (patientSnap && patientSnap.exists()) {
+      const currentCount = Number(patientSnap.data().screeningCount || 0);
+      transaction.update(patientRef, {
+        lastScreeningAt: serverTimestamp(),
+        lastRiskLevel: payload.riskLevel,
+        lastJointScreened: `${payload.side} ${payload.jointType}`,
+        screeningCount: currentCount + 1,
+        updatedAt: serverTimestamp(),
+      });
     }
   });
 
