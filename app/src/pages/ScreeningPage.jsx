@@ -194,12 +194,26 @@ export default function ScreeningPage() {
           if (!existing) return prev;
 
           if (snapshot.isLive && snapshot.timing?.receivedAtMs) {
+            const liveAngle = snapshot.processed?.kneeAngleDeg;
+            const nextPeak =
+              snapshot.testId === "knee_bend_extend" &&
+              liveAngle != null &&
+              Number.isFinite(Number(liveAngle))
+                ? Math.max(
+                    existing.peakFlexionDeg ?? -Infinity,
+                    Number(liveAngle)
+                  )
+                : existing.peakFlexionDeg;
+
             return {
               ...prev,
               [snapshot.testId]: {
                 ...existing,
                 telemetry: snapshot,
                 kneeInterrupted: false,
+                ...(nextPeak !== undefined && nextPeak !== -Infinity
+                  ? { peakFlexionDeg: Number(nextPeak.toFixed(1)) }
+                  : {}),
               },
             };
           }
@@ -523,9 +537,11 @@ export default function ScreeningPage() {
         : null;
     const flexionDeg =
       bendState.manualValues.flexionDeg ||
-      (bendRealProcessed?.kneeAngleDeg != null
-        ? String(bendRealProcessed.kneeAngleDeg)
-        : "");
+      (bendState.peakFlexionDeg != null
+        ? String(bendState.peakFlexionDeg)
+        : bendRealProcessed?.kneeAngleDeg != null
+          ? String(bendRealProcessed.kneeAngleDeg)
+          : "");
 
     const extensionDeficitDeg = bendState.manualValues.extensionDeficitDeg;
 
