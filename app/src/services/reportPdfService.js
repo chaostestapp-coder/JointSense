@@ -209,11 +209,11 @@ export function generateScreeningReportPdf({
     } else if (test.id === "knee_bend_extend") {
       const parts = [];
       if (mv.flexionDeg || screening.flexionDeg != null) {
-        parts.push(`Flexion: ${mv.flexionDeg || screening.flexionDeg}°`);
+        parts.push(`Knee bend: ${mv.flexionDeg || screening.flexionDeg}°`);
       }
       if (mv.extensionDeficitDeg || screening.extensionDeficitDeg != null) {
         parts.push(
-          `Ext. Deficit: ${
+          `Straightening gap: ${
             mv.extensionDeficitDeg ?? screening.extensionDeficitDeg
           }°`
         );
@@ -289,18 +289,21 @@ export function generateScreeningReportPdf({
 
   // Clinical Symptoms & Threshold-Based Outcome
   const symptomRows = [
-    ["Pain Score (VAS 0–10)", formatNumberOrFallback(screening.painScore, "/ 10")],
+    ["Pain Level (0–10)", formatNumberOrFallback(screening.painScore, "/ 10")],
     [
       "Morning Stiffness",
       formatNumberOrFallback(screening.morningStiffnessMin, "min"),
     ],
-    ["Effusion / Swelling", screening.swellingPresent ? "Present" : "Absent"],
-    ["Crepitus", screening.crepitusPresent ? "Present" : "Absent"],
+    ["Joint Swelling", screening.swellingPresent ? "Present" : "Absent"],
     [
-      "Instability Reported",
+      "Clicking or Grinding Sound",
+      screening.crepitusPresent ? "Present" : "Absent",
+    ],
+    [
+      "Joint Buckling / Giving Way",
       screening.instabilityReported ? "Yes" : "No",
     ],
-    ["Gait / Mobility Aid", screening.gaitStatus || "Unassisted"],
+    ["Walking Aid Used", screening.gaitStatus || "Unassisted"],
   ];
 
   autoTable(doc, {

@@ -796,7 +796,7 @@ export default function ScreeningResultPage() {
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Active flexion ROM
+                  Knee bend angle
                 </th>
                 <td className="font-medium">
                   {screening.flexionDeg != null
@@ -804,24 +804,24 @@ export default function ScreeningResultPage() {
                     : "Not recorded"}
                 </td>
                 <td className="text-secondary">
-                  Reference baseline: {screening.referenceFlexion || 135}°
-                  {flexionPercent !== null ? ` (${flexionPercent}% of baseline)` : ""}
+                  Expected full bend: {screening.referenceFlexion || 135}°
+                  {flexionPercent !== null ? ` (${flexionPercent}% of full)` : ""}
                 </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Extension deficit
+                  Straightening gap
                 </th>
                 <td>
                   {screening.extensionDeficitDeg != null
                     ? `${screening.extensionDeficitDeg}°`
                     : "Not recorded"}
                 </td>
-                <td className="text-secondary">Target: 0° full extension</td>
+                <td className="text-secondary">Target: 0° (fully straight)</td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Pain score (VAS)
+                  Pain level (0–10)
                 </th>
                 <td>
                   {screening.painScore != null
@@ -829,7 +829,7 @@ export default function ScreeningResultPage() {
                     : "Not recorded"}
                 </td>
                 <td className="text-secondary">
-                  Patient-reported visual analog score
+                  Patient-reported pain (0 = none, 10 = severe)
                 </td>
               </tr>
               <tr>
@@ -842,40 +842,40 @@ export default function ScreeningResultPage() {
                     : "Not recorded"}
                 </td>
                 <td className="text-secondary">
-                  Duration prior to functional loosening
+                  Time until the joint loosens up
                 </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Effusion / Swelling
+                  Joint swelling
                 </th>
                 <td>{screening.swellingPresent ? "Present" : "Absent"}</td>
                 <td className="text-secondary">
-                  Physical palpation and visual check
+                  Visible or felt fluid/swelling around the joint
                 </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Crepitus
+                  Clicking or grinding sound
                 </th>
                 <td>{screening.crepitusPresent ? "Present" : "Absent"}</td>
                 <td className="text-secondary">
-                  During passive or active joint articulation
+                  During bending or straightening
                 </td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Instability reported
+                  Joint buckling or giving way
                 </th>
                 <td>{screening.instabilityReported ? "Yes" : "No"}</td>
-                <td className="text-secondary">Subjective giving-way episodes</td>
+                <td className="text-secondary">Feeling of knee instability</td>
               </tr>
               <tr>
                 <th scope="row" className="font-medium text-foreground">
-                  Gait / Mobility status
+                  Walking aid used
                 </th>
                 <td>{screening.gaitStatus || "Unassisted"}</td>
-                <td className="text-secondary">Observed ambulation</td>
+                <td className="text-secondary">Observed walking support</td>
               </tr>
             </tbody>
           </table>
