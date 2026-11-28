@@ -124,19 +124,50 @@ export function generateScreeningReportPdf({
     ],
   });
 
-  // OA Risk Model Summary (when present)
+  // OA Risk Model Summary (plain-language)
   if (screening.mlAssessment) {
     const ml = screening.mlAssessment;
+    const PLAIN_FACTOR_TEXT = {
+      knee_angle_range: {
+        up: "Reduced knee movement range",
+        down: "Healthy knee movement range",
+      },
+      vibration_rms_avg: {
+        up: "Elevated joint vibration",
+        down: "Low joint vibration",
+      },
+      vibration_spikes_avg: {
+        up: "Frequent vibration spikes",
+        down: "Minimal vibration spikes",
+      },
+      walking_speed_ms: {
+        up: "Slower walking speed",
+        down: "Healthy walking speed",
+      },
+      heel_to_forefoot_ratio: {
+        up: "Heel-heavy weight distribution",
+        down: "Balanced heel-to-toe weight",
+      },
+      lateral_shift_ratio: {
+        up: "Uneven side-to-side foot load",
+        down: "Balanced side-to-side foot load",
+      },
+      shoe_angle_range: {
+        up: "Reduced foot swing range",
+        down: "Healthy foot swing range",
+      },
+    };
+
     const topFactors = (ml.explanations || [])
       .filter((f) => !f.usedFallback)
-      .slice(0, 4)
-      .map(
-        (f) =>
-          `${f.label}: ${Number(f.raw).toFixed(2)} (${
-            f.increasesRisk ? "increases risk" : "reduces risk"
-          })`
-      )
-      .join("\n");
+      .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+      .slice(0, 3)
+      .map((f) => {
+        const text = PLAIN_FACTOR_TEXT[f.name];
+        if (!text) return f.label;
+        return f.increasesRisk ? text.up : text.down;
+      })
+      .join(" · ");
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 6,
@@ -144,14 +175,10 @@ export function generateScreeningReportPdf({
       theme: "grid",
       styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [20, 28, 30] },
       headStyles: { fillColor: [15, 94, 89], textColor: [255, 255, 255] },
-      head: [["OA Risk Model Assessment", "Result"]],
+      head: [["Arthritis (OA) Risk Assessment", "Summary"]],
       body: [
-        ["Predicted OA Risk", `${ml.riskBand} (${ml.probabilityPct}%)`],
-        [
-          "Live Features Used",
-          `${ml.measuredFeaturesCount ?? 0} of ${ml.totalFeatures ?? 7}`,
-        ],
-        ...(topFactors ? [["Key Contributing Factors", topFactors]] : []),
+        ["Estimated OA Risk", `${ml.riskBand} (${ml.probabilityPct}%)`],
+        ...(topFactors ? [["Key Takeaways", topFactors]] : []),
       ],
     });
   }
@@ -212,87 +239,42 @@ export function generateScreeningReportPdf({
     body: testRows,
   });
 
-  // Knee Sleeve Sensor Snapshot (if captured)
+  // Combined Movement & Gait Sensor Summary (simple, non-technical)
   const kneeSnap =
     screening.sensors?.kneeSleeve?.latestSnapshot ||
     getLatestKneeSnapshot(screening.guidedTests);
-  if (kneeSnap) {
-    const p = kneeSnap.processed || {};
-    const v = p.vibration || {};
-    const acc = kneeSnap.rawImu?.acc || {};
-    const gyro = kneeSnap.rawImu?.gyro || {};
-
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 6,
-      margin: { left: margin, right: margin },
-      theme: "grid",
-      styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [20, 28, 30] },
-      headStyles: { fillColor: [235, 240, 238], textColor: [20, 28, 30] },
-      head: [
-        [
-          "Knee Sleeve Sensor Snapshot (Captured)",
-          "Value",
-          "Raw IMU / Timing",
-          "Value",
-        ],
-      ],
-      body: [
-        [
-          "Knee Angle",
-          formatNumberOrFallback(p.kneeAngleDeg, "deg"),
-          "Accelerometer (X, Y, Z)",
-          `${formatNumberOrFallback(acc.x)}, ${formatNumberOrFallback(
-            acc.y
-          )}, ${formatNumberOrFallback(acc.z)}`,
-        ],
-        [
-          "Walking Speed",
-          formatNumberOrFallback(p.walkingSpeedMs, "m/s"),
-          "Gyroscope (X, Y, Z)",
-          `${formatNumberOrFallback(gyro.x)}, ${formatNumberOrFallback(
-            gyro.y
-          )}, ${formatNumberOrFallback(gyro.z)}`,
-        ],
-        [
-          "Steps",
-          formatNumberOrFallback(p.steps),
-          "ESP32 Timestamp",
-          kneeSnap.timing?.esp32Timestamp != null
-            ? String(kneeSnap.timing.esp32Timestamp)
-            : "Not recorded",
-        ],
-        [
-          "Vibration (RMS / Peak / Spikes)",
-          `${formatNumberOrFallback(v.rms)} / ${formatNumberOrFallback(
-            v.peak
-          )} / ${formatNumberOrFallback(v.spikes)}`,
-          "Source Path",
-          kneeSnap.rtdbPath || "/knee_sleeve/live",
-        ],
-      ],
-    });
-  }
-
-  // Smart Insole Sensor Snapshot (when integrated and captured)
   const insoleSnap =
     screening.sensors?.smartInsole?.latestSnapshot ||
     getLatestInsoleSnapshot(screening.guidedTests);
-  if (insoleSnap) {
-    const ip = insoleSnap.processed || {};
-    const fsr = ip.fsr || {};
-    const bal = ip.balance || {};
-    const iAcc = insoleSnap.rawImu?.acc || {};
-    const iGyro = insoleSnap.rawImu?.gyro || {};
-    const pressure = insoleSnap.sole?.pressureDistribution;
 
-    const shoeAngle = ip.shoeAngleDeg ?? insoleSnap.ankle?.angle;
+  if (kneeSnap || insoleSnap) {
+    const kp = kneeSnap?.processed || {};
+    const ip = insoleSnap?.processed || {};
+    const shoeAngle = ip.shoeAngleDeg ?? insoleSnap?.ankle?.angle;
     const footContactText =
       ip.footContact === true
         ? "In contact"
         : ip.footContact === false
           ? "No contact"
           : "Not recorded";
-    const totalPressure = fsr.total ?? pressure?.aggregatedValue ?? null;
+
+    const sensorRows = [];
+    if (kneeSnap) {
+      sensorRows.push([
+        "Knee Bend Angle",
+        formatNumberOrFallback(kp.kneeAngleDeg, "deg"),
+        "Steps Counted",
+        formatNumberOrFallback(kp.steps),
+      ]);
+    }
+    if (insoleSnap) {
+      sensorRows.push([
+        "Foot Angle",
+        formatNumberOrFallback(shoeAngle, "deg"),
+        "Foot Contact",
+        footContactText,
+      ]);
+    }
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 6,
@@ -300,56 +282,8 @@ export function generateScreeningReportPdf({
       theme: "grid",
       styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [20, 28, 30] },
       headStyles: { fillColor: [235, 240, 238], textColor: [20, 28, 30] },
-      head: [
-        [
-          "Smart Insole Snapshot (Captured)",
-          "Value",
-          "Raw IMU / Timing",
-          "Value",
-        ],
-      ],
-      body: [
-        [
-          "Shoe Angle",
-          formatNumberOrFallback(shoeAngle, "deg"),
-          "Accelerometer (X, Y, Z)",
-          `${formatNumberOrFallback(iAcc.x)}, ${formatNumberOrFallback(
-            iAcc.y
-          )}, ${formatNumberOrFallback(iAcc.z)}`,
-        ],
-        [
-          "Foot Contact",
-          footContactText,
-          "Gyroscope (X, Y, Z)",
-          `${formatNumberOrFallback(iGyro.x)}, ${formatNumberOrFallback(
-            iGyro.y
-          )}, ${formatNumberOrFallback(iGyro.z)}`,
-        ],
-        [
-          "Total Pressure",
-          formatNumberOrFallback(totalPressure),
-          "Device Timestamp",
-          insoleSnap.timing?.deviceTimestamp != null
-            ? String(insoleSnap.timing.deviceTimestamp)
-            : "Not recorded",
-        ],
-        [
-          "FSR (Heel / Inner / Outer / Toe)",
-          `${formatNumberOrFallback(fsr.heel)} / ${formatNumberOrFallback(
-            fsr.inner
-          )} / ${formatNumberOrFallback(fsr.outer)} / ${formatNumberOrFallback(
-            fsr.toe
-          )}`,
-          "Balance % (Heel / Inner / Outer / Toe)",
-          `${formatNumberOrFallback(bal.heelPct, "%")} / ${formatNumberOrFallback(
-            bal.innerPct,
-            "%"
-          )} / ${formatNumberOrFallback(bal.outerPct, "%")} / ${formatNumberOrFallback(
-            bal.toePct,
-            "%"
-          )}`,
-        ],
-      ],
+      head: [["Movement & Gait Sensor Summary", "Value", "Measurement", "Value"]],
+      body: sensorRows,
     });
   }
 

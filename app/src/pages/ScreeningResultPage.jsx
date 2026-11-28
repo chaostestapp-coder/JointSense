@@ -71,6 +71,7 @@ export default function ScreeningResultPage() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfNotice, setPdfNotice] = useState("");
   const [pdfError, setPdfError] = useState("");
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   useEffect(() => {
     if (!screeningId) return undefined;
@@ -447,30 +448,50 @@ export default function ScreeningResultPage() {
             <div className="pt-2 border-t border-border space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="font-semibold text-foreground">
-                  OA risk prediction (Logistic Regression ·{" "}
-                  {screening.mlAssessment.measuredFeaturesCount}/
-                  {screening.mlAssessment.totalFeatures} live features)
+                  Arthritis (OA) risk estimate
                 </span>
-                <span className="font-mono font-semibold text-foreground">
-                  {screening.mlAssessment.probabilityPct}% probability
+                <span className="font-semibold text-foreground">
+                  {screening.mlAssessment.riskBand} ({screening.mlAssessment.probabilityPct}%)
                 </span>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 {(screening.mlAssessment.explanations || [])
                   .filter((f) => !f.usedFallback)
-                  .slice(0, 4)
-                  .map((f) => (
-                    <span
-                      key={f.name}
-                      className="px-2 py-0.5 bg-surface-muted border border-border rounded-xs text-secondary"
-                    >
-                      {f.label}:{" "}
-                      <strong className="text-foreground">
-                        {Number(f.raw).toFixed(2)}
-                      </strong>{" "}
-                      ({f.increasesRisk ? "↑ risk" : "↓ risk"})
-                    </span>
-                  ))}
+                  .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+                  .slice(0, 3)
+                  .map((f) => {
+                    const plainMap = {
+                      knee_angle_range: f.increasesRisk
+                        ? "Reduced knee movement range"
+                        : "Healthy knee movement range",
+                      vibration_rms_avg: f.increasesRisk
+                        ? "Elevated joint vibration"
+                        : "Low joint vibration",
+                      vibration_spikes_avg: f.increasesRisk
+                        ? "Frequent vibration spikes"
+                        : "Minimal vibration spikes",
+                      walking_speed_ms: f.increasesRisk
+                        ? "Slower walking speed"
+                        : "Healthy walking speed",
+                      heel_to_forefoot_ratio: f.increasesRisk
+                        ? "Heel-heavy weight distribution"
+                        : "Balanced heel-to-toe weight",
+                      lateral_shift_ratio: f.increasesRisk
+                        ? "Uneven side-to-side foot load"
+                        : "Balanced side-to-side foot load",
+                      shoe_angle_range: f.increasesRisk
+                        ? "Reduced foot swing range"
+                        : "Healthy foot swing range",
+                    };
+                    return (
+                      <span
+                        key={f.name}
+                        className="px-2 py-0.5 bg-surface-muted border border-border rounded-xs text-secondary"
+                      >
+                        {plainMap[f.name] || f.label}
+                      </span>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -540,182 +561,183 @@ export default function ScreeningResultPage() {
         </section>
       )}
 
-      {/* Knee Sleeve Analysis */}
+      {/* Combined Movement & Gait Summary (simple by default, technical details optional) */}
       <section className="bg-surface border border-border rounded-sm">
         <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-foreground">
-            Knee sleeve analysis
+            Movement & gait sensor summary
           </h2>
-          <div className="flex items-center gap-2 text-xs">
-            {kneeInterrupted && (
-              <span className="px-2 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
-                Stream interrupted
-              </span>
-            )}
-            <span className="text-muted font-mono">
-              {kneeSnap?.rtdbPath || "/knee_sleeve/live"}
-            </span>
-          </div>
+          {(kneeSnap || insoleSnap) && (
+            <button
+              type="button"
+              aria-expanded={showTechnicalDetails}
+              onClick={() => setShowTechnicalDetails((prev) => !prev)}
+              className="text-xs font-medium text-link hover:underline no-print"
+            >
+              {showTechnicalDetails
+                ? "Hide technical sensor details"
+                : "Show technical sensor details"}
+            </button>
+          )}
         </div>
-        {!kneeSnap ? (
-          <div className="px-4 py-5 text-sm text-secondary">
-            Knee sleeve sensor data was unavailable during this screening.
-          </div>
-        ) : (
-          <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Knee angle</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(kneeSnap.processed?.kneeAngleDeg, "°")}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Walking speed</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(kneeSnap.processed?.walkingSpeedMs, "m/s")}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Steps</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(kneeSnap.processed?.steps)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">ESP32 timestamp</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {kneeSnap.timing?.esp32Timestamp ?? "Not recorded"}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Vibration RMS</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(kneeSnap.processed?.vibration?.rms)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Vibration peak / spikes</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(kneeSnap.processed?.vibration?.peak)} /{" "}
-                {formatValue(kneeSnap.processed?.vibration?.spikes)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Accelerometer (X, Y, Z)</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(kneeSnap.rawImu?.acc?.x)},{" "}
-                {formatValue(kneeSnap.rawImu?.acc?.y)},{" "}
-                {formatValue(kneeSnap.rawImu?.acc?.z)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Gyroscope (X, Y, Z)</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(kneeSnap.rawImu?.gyro?.x)},{" "}
-                {formatValue(kneeSnap.rawImu?.gyro?.y)},{" "}
-                {formatValue(kneeSnap.rawImu?.gyro?.z)}
-              </dd>
-            </div>
-          </dl>
-        )}
-      </section>
 
-      {/* Smart Insole Analysis */}
-      <section className="bg-surface border border-border rounded-sm">
-        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">
-            Smart insole analysis
-          </h2>
-          <div className="flex items-center gap-2 text-xs">
-            {insoleInterrupted && (
-              <span className="px-2 py-0.5 bg-warning-bg text-warning-text border border-warning-border rounded-xs">
-                Stream interrupted
-              </span>
-            )}
-            <span className="text-muted font-mono">
-              {insoleSnap?.rtdbPath || "/shoe/live"}
-            </span>
-          </div>
-        </div>
-        {!insoleSnap ? (
+        {!kneeSnap && !insoleSnap ? (
           <div className="px-4 py-5 text-sm text-secondary">
-            Smart insole sensor data was unavailable during this screening.
+            Sensor data was unavailable during this screening.
           </div>
         ) : (
-          <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Shoe angle</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(
-                  insoleSnap.processed?.shoeAngleDeg ?? insoleSnap.ankle?.angle,
-                  "°"
+          <div className="divide-y divide-border">
+            <dl className="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:gap-px bg-border text-sm">
+              <div className="bg-surface px-4 py-3">
+                <dt className="text-xs text-secondary">Knee bend angle</dt>
+                <dd className="font-medium text-foreground mt-0.5">
+                  {kneeSnap
+                    ? formatValue(kneeSnap.processed?.kneeAngleDeg, "°")
+                    : "Unavailable"}
+                </dd>
+              </div>
+              <div className="bg-surface px-4 py-3">
+                <dt className="text-xs text-secondary">Steps counted</dt>
+                <dd className="font-medium text-foreground mt-0.5">
+                  {kneeSnap
+                    ? formatValue(kneeSnap.processed?.steps)
+                    : "Unavailable"}
+                </dd>
+              </div>
+              <div className="bg-surface px-4 py-3">
+                <dt className="text-xs text-secondary">Foot angle</dt>
+                <dd className="font-medium text-foreground mt-0.5">
+                  {insoleSnap
+                    ? formatValue(
+                        insoleSnap.processed?.shoeAngleDeg ??
+                          insoleSnap.ankle?.angle,
+                        "°"
+                      )
+                    : "Unavailable"}
+                </dd>
+              </div>
+              <div className="bg-surface px-4 py-3">
+                <dt className="text-xs text-secondary">Foot contact</dt>
+                <dd className="font-medium text-foreground mt-0.5">
+                  {!insoleSnap
+                    ? "Unavailable"
+                    : insoleSnap.processed?.footContact === true
+                      ? "In contact"
+                      : insoleSnap.processed?.footContact === false
+                        ? "No contact"
+                        : "Not recorded"}
+                </dd>
+              </div>
+            </dl>
+
+            {showTechnicalDetails && (
+              <div className="p-4 space-y-4 bg-surface-muted/20 text-xs">
+                {kneeSnap && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">
+                        Knee sleeve raw telemetry
+                      </span>
+                      <span className="font-mono text-muted">
+                        {kneeSnap.rtdbPath || "/knee_sleeve/live"}
+                      </span>
+                    </div>
+                    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Walking speed</dt>
+                        <dd className="font-medium text-foreground mt-0.5">
+                          {formatValue(kneeSnap.processed?.walkingSpeedMs, "m/s")}
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Vibration (RMS / Peak / Spikes)</dt>
+                        <dd className="font-medium text-foreground mt-0.5">
+                          {formatValue(kneeSnap.processed?.vibration?.rms)} /{" "}
+                          {formatValue(kneeSnap.processed?.vibration?.peak)} /{" "}
+                          {formatValue(kneeSnap.processed?.vibration?.spikes)}
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Accelerometer (X, Y, Z)</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(kneeSnap.rawImu?.acc?.x)},{" "}
+                          {formatValue(kneeSnap.rawImu?.acc?.y)},{" "}
+                          {formatValue(kneeSnap.rawImu?.acc?.z)}
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Gyroscope (X, Y, Z)</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(kneeSnap.rawImu?.gyro?.x)},{" "}
+                          {formatValue(kneeSnap.rawImu?.gyro?.y)},{" "}
+                          {formatValue(kneeSnap.rawImu?.gyro?.z)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
                 )}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Foot contact</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {insoleSnap.processed?.footContact === true
-                  ? "In contact"
-                  : insoleSnap.processed?.footContact === false
-                    ? "No contact"
-                    : "Not recorded"}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Total pressure</dt>
-              <dd className="font-medium text-foreground mt-0.5">
-                {formatValue(
-                  insoleSnap.processed?.fsr?.total ??
-                    insoleSnap.sole?.pressureDistribution?.aggregatedValue
+
+                {insoleSnap && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-foreground">
+                        Smart insole raw telemetry
+                      </span>
+                      <span className="font-mono text-muted">
+                        {insoleSnap.rtdbPath || "/shoe/live"}
+                      </span>
+                    </div>
+                    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Total / Regional FSR</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(insoleSnap.processed?.fsr?.total)} (
+                          {formatValue(insoleSnap.processed?.fsr?.heel)}/
+                          {formatValue(insoleSnap.processed?.fsr?.inner)}/
+                          {formatValue(insoleSnap.processed?.fsr?.outer)}/
+                          {formatValue(insoleSnap.processed?.fsr?.toe)})
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Balance % (H/I/O/T)</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(insoleSnap.processed?.balance?.heelPct, "%")}{" "}
+                          /{" "}
+                          {formatValue(
+                            insoleSnap.processed?.balance?.innerPct,
+                            "%"
+                          )}{" "}
+                          /{" "}
+                          {formatValue(
+                            insoleSnap.processed?.balance?.outerPct,
+                            "%"
+                          )}{" "}
+                          /{" "}
+                          {formatValue(insoleSnap.processed?.balance?.toePct, "%")}
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Accelerometer (X, Y, Z)</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(insoleSnap.rawImu?.acc?.x)},{" "}
+                          {formatValue(insoleSnap.rawImu?.acc?.y)},{" "}
+                          {formatValue(insoleSnap.rawImu?.acc?.z)}
+                        </dd>
+                      </div>
+                      <div className="p-2 bg-surface border border-border rounded-sm">
+                        <dt className="text-secondary">Gyroscope (X, Y, Z)</dt>
+                        <dd className="font-mono text-foreground mt-0.5">
+                          {formatValue(insoleSnap.rawImu?.gyro?.x)},{" "}
+                          {formatValue(insoleSnap.rawImu?.gyro?.y)},{" "}
+                          {formatValue(insoleSnap.rawImu?.gyro?.z)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
                 )}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3">
-              <dt className="text-xs text-secondary">Device timestamp</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {insoleSnap.timing?.deviceTimestamp ?? "Not recorded"}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3 col-span-2">
-              <dt className="text-xs text-secondary">
-                Regional pressure (Heel / Inner / Outer / Toe)
-              </dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(insoleSnap.processed?.fsr?.heel)} /{" "}
-                {formatValue(insoleSnap.processed?.fsr?.inner)} /{" "}
-                {formatValue(insoleSnap.processed?.fsr?.outer)} /{" "}
-                {formatValue(insoleSnap.processed?.fsr?.toe)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3 col-span-2">
-              <dt className="text-xs text-secondary">
-                Balance distribution (Heel / Inner / Outer / Toe)
-              </dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(insoleSnap.processed?.balance?.heelPct, "%")} /{" "}
-                {formatValue(insoleSnap.processed?.balance?.innerPct, "%")} /{" "}
-                {formatValue(insoleSnap.processed?.balance?.outerPct, "%")} /{" "}
-                {formatValue(insoleSnap.processed?.balance?.toePct, "%")}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3 col-span-2">
-              <dt className="text-xs text-secondary">Accelerometer (X, Y, Z)</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(insoleSnap.rawImu?.acc?.x)},{" "}
-                {formatValue(insoleSnap.rawImu?.acc?.y)},{" "}
-                {formatValue(insoleSnap.rawImu?.acc?.z)}
-              </dd>
-            </div>
-            <div className="bg-surface px-4 py-3 col-span-2">
-              <dt className="text-xs text-secondary">Gyroscope (X, Y, Z)</dt>
-              <dd className="font-mono text-xs text-foreground mt-1">
-                {formatValue(insoleSnap.rawImu?.gyro?.x)},{" "}
-                {formatValue(insoleSnap.rawImu?.gyro?.y)},{" "}
-                {formatValue(insoleSnap.rawImu?.gyro?.z)}
-              </dd>
-            </div>
-          </dl>
+              </div>
+            )}
+          </div>
         )}
       </section>
 
