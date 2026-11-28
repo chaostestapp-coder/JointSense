@@ -155,7 +155,7 @@ export default function AppShell() {
   );
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
+    <div className="min-h-screen flex text-foreground">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block w-56 shrink-0 bg-surface border-r border-border no-print">
         <div className="sticky top-0 h-screen">{navContent}</div>

@@ -1,5 +1,6 @@
 import "./App.css";
 import { BrowserRouter, Route, Routes } from "react-router";
+import CursorSpotlight from "../components/common/CursorSpotlight";
 import ProtectedRoute from "../components/common/ProtectedRoute";
 import AppShell from "../components/layout/AppShell";
 import { AuthProvider } from "../context/AuthContext";
@@ -18,27 +19,30 @@ const App = () => {
     <LanguageProvider>
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              element={
-                <ProtectedRoute>
-                  <AppShell />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<DashboardPage />} />
-              <Route path="patients" element={<PatientsPage />} />
-              <Route path="patients/:patientId" element={<PatientDetailsPage />} />
-              <Route path="screening" element={<ScreeningPage />} />
+          <CursorSpotlight />
+          <div className="relative z-10">
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
               <Route
-                path="screenings/:screeningId"
-                element={<ScreeningResultPage />}
-              />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="*" element={<NotFoundPage />} />
-            </Route>
-          </Routes>
+                element={
+                  <ProtectedRoute>
+                    <AppShell />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<DashboardPage />} />
+                <Route path="patients" element={<PatientsPage />} />
+                <Route path="patients/:patientId" element={<PatientDetailsPage />} />
+                <Route path="screening" element={<ScreeningPage />} />
+                <Route
+                  path="screenings/:screeningId"
+                  element={<ScreeningResultPage />}
+                />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+            </Routes>
+          </div>
         </BrowserRouter>
       </AuthProvider>
     </LanguageProvider>
