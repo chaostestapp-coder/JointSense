@@ -130,7 +130,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={handleTestVoice}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm shrink-0"
+                className="w-fit inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm shrink-0"
               >
                 {testingVoice ? (
                   <>

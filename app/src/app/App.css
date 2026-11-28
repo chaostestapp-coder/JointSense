@@ -11,17 +11,17 @@
     color-scheme: light;
   }
 
-  --background: light-dark(#f4f6f5, #0f1416);
+  --background: light-dark(#f5f6f6, #0f1416);
   --surface: light-dark(#ffffff, #161d20);
   --surface-raised: light-dark(#ffffff, #1d262a);
-  --surface-muted: light-dark(#ebf0ee, #1d2629);
-  --surface-hover: light-dark(#dfe7e4, #263136);
+  --surface-muted: light-dark(#f0f2f1, #1d2629);
+  --surface-hover: light-dark(#e9edeb, #263136);
 
-  --foreground: light-dark(#141c1e, #ecf1f2);
-  --secondary: light-dark(#465458, #aebbc0);
-  --muted: light-dark(#647377, #7f8f94);
+  --foreground: light-dark(#18201f, #ecf1f2);
+  --secondary: light-dark(#4b5553, #aebbc0);
+  --muted: light-dark(#707b78, #7f8f94);
 
-  --border: light-dark(#d4deda, #29353a);
+  --border: light-dark(#dce1df, #29353a);
 
   /* Rich Clinical Deep Teal */
   --accent: light-dark(#0f5e59, #2da99f);
@@ -339,10 +339,6 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
   border-bottom: none;
 }
 
-.clinical-table tbody tr:hover {
-  background-color: var(--surface-muted);
-}
-
 @container (width < 600px) {
   .clinical-table--stacked,
   .clinical-table--stacked thead,
@@ -432,6 +428,31 @@ textarea:is(:user-invalid, .user-invalid-fallback) ~ .field-error-msg {
   padding: 0 !important;
   border: 0 !important;
   white-space: nowrap !important;
+}
+
+/* Subtle pointer-following spotlight rendered behind UI surfaces */
+.cursor-spotlight-orb {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 440px;
+  height: 440px;
+  border-radius: 9999px;
+  opacity: 0;
+  will-change: transform, opacity;
+  transition: opacity 0.35s ease;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 14%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 5%, transparent) 38%,
+    transparent 70%
+  );
+}
+
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .cursor-spotlight {
+    display: none !important;
+  }
 }
 
 @media print {
