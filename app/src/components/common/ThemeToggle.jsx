@@ -86,14 +86,14 @@ export default function ThemeToggle() {
       onClick={handleToggle}
       aria-label={nextLabel}
       title={nextLabel}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-secondary hover:text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
+      className="w-fit inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-secondary hover:text-foreground bg-surface-muted hover:bg-surface-hover border border-border rounded-sm"
     >
       {isDark ? (
         <Sun size={14} strokeWidth={1.75} aria-hidden="true" />
       ) : (
         <Moon size={14} strokeWidth={1.75} aria-hidden="true" />
       )}
-      <span className="hidden sm:inline">{isDark ? "Light" : "Dark"}</span>
+      <span className="">{isDark ? "Light" : "Dark"}</span>
     </button>
   );
 }

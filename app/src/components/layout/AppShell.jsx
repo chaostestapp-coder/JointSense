@@ -222,7 +222,7 @@ export default function AppShell() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6">
+        <main className="flex-1 p-4 pt-8 sm:p-6">
           <div className="max-w-6xl mx-auto">
             <Outlet />
           </div>
