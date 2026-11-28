@@ -228,7 +228,7 @@ export default function ScreeningResultPage() {
 
   const summaryHeadline =
     screening.evaluatedCount != null
-      ? `${screening.flaggedCount ?? 0} of ${screening.evaluatedCount} thresholds flagged`
+      ? `${screening.flaggedCount ?? 0} of ${screening.evaluatedCount} checks flagged`
       : screening.compositeIndex != null
         ? `${screening.compositeIndex} / 100`
         : "Not recorded";
@@ -391,68 +391,41 @@ export default function ScreeningResultPage() {
       <section className="bg-surface border border-border rounded-sm divide-y divide-border">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
           <div className="p-4">
-            <div className="text-xs text-secondary">Threshold summary</div>
+            <div className="text-xs text-secondary">Checks flagged</div>
             <div className="text-lg font-semibold text-foreground mt-1">
               {summaryHeadline}
             </div>
           </div>
           <div className="p-4">
-            <div className="text-xs text-secondary">Screening classification</div>
+            <div className="text-xs text-secondary">Overall status</div>
             <div className="mt-1.5">
               <StatusBadge status={screening.riskLevel} />
             </div>
           </div>
           <div className="p-4">
-            <div className="text-xs text-secondary">Evaluation method</div>
-            <div className="text-sm font-medium text-foreground mt-1.5">
-              {screening.analysisSource || "Threshold Screening Rubric"}
+            <div className="text-xs text-secondary">Arthritis (OA) risk</div>
+            <div className="text-lg font-semibold text-foreground mt-1">
+              {screening.mlAssessment
+                ? `${screening.mlAssessment.riskBand} (${screening.mlAssessment.probabilityPct}%)`
+                : "Not available"}
             </div>
           </div>
         </div>
 
         <div className="p-4 space-y-2.5">
-          <div className="text-xs text-secondary">Screening guidance</div>
+          <div className="text-xs text-secondary">Next steps</div>
           <p className="text-sm text-foreground">{screening.recommendation}</p>
-          <div className="pt-2 border-t border-border grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            <div>
-              <span className="text-secondary">Knee sleeve: </span>
-              <strong className="text-foreground">
-                {kneeSnap
-                  ? kneeInterrupted
-                    ? "Captured (interrupted)"
-                    : "Captured"
-                  : "Unavailable"}
-              </strong>
-            </div>
-            <div>
-              <span className="text-secondary">Smart insole: </span>
-              <strong className="text-foreground">
-                {insoleSnap
-                  ? insoleInterrupted
-                    ? "Captured (interrupted)"
-                    : "Captured"
-                  : "Unavailable"}
-              </strong>
-            </div>
-            <div>
-              <span className="text-secondary">OA Risk Model: </span>
-              <strong className="text-foreground">
-                {screening.mlAssessment
-                  ? `${screening.mlAssessment.riskBand} (${screening.mlAssessment.probabilityPct}%)`
-                  : "Not available"}
-              </strong>
-            </div>
-          </div>
+          {(kneeInterrupted || insoleInterrupted) && (
+            <p className="text-xs text-warning-text">
+              Note: Sensor connection was briefly interrupted during this session;
+              latest valid readings were preserved.
+            </p>
+          )}
 
           {screening.mlAssessment && (
             <div className="pt-2 border-t border-border space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="font-semibold text-foreground">
-                  Arthritis (OA) risk estimate
-                </span>
-                <span className="font-semibold text-foreground">
-                  {screening.mlAssessment.riskBand} ({screening.mlAssessment.probabilityPct}%)
-                </span>
+              <div className="text-xs font-semibold text-foreground">
+                Key takeaways
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 {(screening.mlAssessment.explanations || [])

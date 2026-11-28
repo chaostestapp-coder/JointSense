@@ -196,7 +196,7 @@ export function evaluateClinicalScreening(measurements) {
     thresholds,
     referenceFlexion,
     summaryRecommendation,
-    source: "Threshold Screening Rubric (v1 — Pre-ML)",
+    source: "Clinical Screening Check",
     mlModelIntegrated: false,
   };
 }
